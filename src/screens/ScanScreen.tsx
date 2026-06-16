@@ -2,12 +2,12 @@ import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { sendImageForLandmarks, LandmarkResult } from '../api';
+import { saveScan, FaceScore } from '../api';
 import { colors, radius } from '../theme';
 
 // [4] AI 정밀 안면 스캔 화면입니다.
-// "사진 선택" 버튼을 누르면 사진을 고르고, 그 사진을 백엔드로 보내
-// 실제로 얼굴 특징점(랜드마크)을 분석한 결과를 보여줍니다.
+// "사진 선택"으로 사진을 고르면 백엔드로 보내 실제로 얼굴을 분석하고,
+// 그 결과(특징점·점수)를 "기록"으로 저장합니다. 저장된 기록은 리포트 탭에서 전/후·변화로 확인합니다.
 
 // 화면 상태: idle(대기) → analyzing(분석 중) → done(완료) → error(오류)
 type Status = 'idle' | 'analyzing' | 'done' | 'error';
@@ -15,8 +15,9 @@ type Status = 'idle' | 'analyzing' | 'done' | 'error';
 export default function ScanScreen() {
   const [status, setStatus] = useState<Status>('idle');
   const [imageUri, setImageUri] = useState<string | null>(null); // 고른 사진
-  const [result, setResult] = useState<LandmarkResult | null>(null); // 분석 결과
-  const [errorMsg, setErrorMsg] = useState('');
+  const [landmarkCount, setLandmarkCount] = useState<number | null>(null); // 찾은 특징점 수
+  const [scores, setScores] = useState<FaceScore[] | null>(null); // 계산된 점수
+  const [message, setMessage] = useState(''); // 안내/오류 문구
 
   // 스캔 라인 위치 애니메이션 값
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -47,36 +48,41 @@ export default function ScanScreen() {
 
   // "사진 선택 후 분석" 버튼을 눌렀을 때
   async function handlePickAndScan() {
-    // 1) 사진 접근 권한을 요청합니다.
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       setStatus('error');
-      setErrorMsg('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
+      setMessage('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
       return;
     }
 
-    // 2) 갤러리에서 사진을 한 장 고릅니다.
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,
     });
-    if (picked.canceled) return; // 사용자가 취소한 경우
+    if (picked.canceled) return;
 
     const uri = picked.assets[0].uri;
     setImageUri(uri);
-    setResult(null);
-    setErrorMsg('');
+    setScores(null);
+    setLandmarkCount(null);
+    setMessage('');
     setStatus('analyzing');
 
-    // 3) 사진을 백엔드로 보내 얼굴을 분석합니다.
+    // 사진을 백엔드로 보내 분석 + 기록 저장까지 한 번에 처리합니다.
     try {
-      const data = await sendImageForLandmarks(uri);
-      setResult(data);
-      setStatus('done');
+      const data = await saveScan(uri);
+      if (data.detected && data.record) {
+        setLandmarkCount(data.landmark_count ?? null);
+        setScores(data.record.scores);
+        setStatus('done');
+      } else {
+        setStatus('error');
+        setMessage(data.message || '얼굴을 분석하지 못했습니다.');
+      }
     } catch (e) {
-      console.log('분석 요청 실패:', e);
+      console.log('분석/저장 실패:', e);
       setStatus('error');
-      setErrorMsg('백엔드 서버에 연결하지 못했습니다. 서버가 켜져 있는지 확인해 주세요.');
+      setMessage('백엔드 서버에 연결하지 못했습니다. 서버가 켜져 있는지 확인해 주세요.');
     }
   }
 
@@ -97,15 +103,12 @@ export default function ScanScreen() {
       <View style={styles.center}>
         {/* 얼굴 스캔 박스 */}
         <View style={styles.scanBox}>
-          {/* 고른 사진이 있으면 보여줍니다. */}
           {imageUri ? (
             <Image source={{ uri: imageUri }} style={styles.pickedImage} resizeMode="cover" />
           ) : (
-            // 사진을 고르기 전에는 점선 가이드 원을 보여줍니다.
             <View style={[styles.guideCircle, { borderColor: colors.textFainter }]} />
           )}
 
-          {/* 분석 중일 때만 보이는 스캔 라인 + 문구 */}
           {isAnalyzing && (
             <View style={styles.scanOverlay}>
               <Animated.View
@@ -123,27 +126,27 @@ export default function ScanScreen() {
           </Text>
         )}
 
-        {status === 'done' && result && (
+        {status === 'done' && scores && (
           <View style={styles.resultBox}>
-            {result.detected ? (
-              <>
-                <View style={styles.resultRow}>
-                  <Feather name="check-circle" size={18} color={colors.emerald} />
-                  <Text style={styles.resultTitle}>얼굴 분석 완료</Text>
-                </View>
-                <Text style={styles.resultText}>
-                  특징점 {result.landmark_count}개를 찾았어요.
-                </Text>
-              </>
-            ) : (
-              <>
-                <View style={styles.resultRow}>
-                  <Feather name="alert-circle" size={18} color={colors.amber400} />
-                  <Text style={styles.resultTitle}>얼굴을 찾지 못했어요</Text>
-                </View>
-                <Text style={styles.resultText}>{result.message}</Text>
-              </>
+            <View style={styles.resultRow}>
+              <Feather name="check-circle" size={18} color={colors.emerald} />
+              <Text style={styles.resultTitle}>얼굴 분석 완료 · 기록 저장됨</Text>
+            </View>
+            {landmarkCount !== null && (
+              <Text style={styles.resultSub}>특징점 {landmarkCount}개 검출</Text>
             )}
+
+            {/* 계산된 점수 표시 */}
+            <View style={styles.scoreList}>
+              {scores.map((s) => (
+                <View key={s.key} style={styles.scoreItem}>
+                  <Text style={styles.scoreLabel}>{s.label}</Text>
+                  <Text style={styles.scoreValue}>{s.value}점</Text>
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.hintText}>리포트 탭에서 전/후 변화를 확인하세요.</Text>
           </View>
         )}
 
@@ -151,9 +154,9 @@ export default function ScanScreen() {
           <View style={styles.resultBox}>
             <View style={styles.resultRow}>
               <Feather name="alert-circle" size={18} color={colors.red} />
-              <Text style={styles.resultTitle}>오류</Text>
+              <Text style={styles.resultTitle}>분석하지 못했어요</Text>
             </View>
-            <Text style={styles.resultText}>{errorMsg}</Text>
+            <Text style={styles.resultSub}>{message}</Text>
           </View>
         )}
       </View>
@@ -255,7 +258,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   resultBox: {
-    marginTop: 28,
+    marginTop: 24,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -275,11 +278,39 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 15,
   },
-  resultText: {
+  resultSub: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  scoreList: {
+    width: '100%',
+    marginTop: 12,
+    gap: 8,
+  },
+  scoreItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  scoreLabel: {
+    color: colors.textMuted,
+    fontSize: 14,
+  },
+  scoreValue: {
+    color: colors.amber400,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  hintText: {
+    color: colors.textFaint,
+    fontSize: 12,
+    marginTop: 12,
   },
   footer: {
     paddingHorizontal: 24,

@@ -101,3 +101,42 @@ export async function analyzeFaceScores(uri: string): Promise<AnalyzeResult> {
   });
   return response.json();
 }
+
+// 저장된 이력(기록) 한 건의 형태입니다.
+export type ScanRecord = {
+  id: number; // 기록 번호
+  created_at: string; // 분석한 시각
+  image_url: string; // 사진 주소(서버 기준 상대 경로). 전체 주소는 BACKEND_URL을 앞에 붙입니다.
+  scores: FaceScore[]; // 그때의 점수들
+};
+
+// 사진을 보내 파일 데이터를 FormData에 담는 공통 처리입니다.
+async function buildImageFormData(uri: string): Promise<FormData> {
+  const formData = new FormData();
+  if (Platform.OS === 'web') {
+    const res = await fetch(uri);
+    const blob = await res.blob();
+    formData.append('file', blob, 'photo.jpg');
+  } else {
+    formData.append('file', { uri, name: 'photo.jpg', type: 'image/jpeg' } as any);
+  }
+  return formData;
+}
+
+// 사진을 분석하고 그 결과를 이력으로 저장하는 함수입니다.
+export async function saveScan(
+  uri: string
+): Promise<{ detected: boolean; message: string; landmark_count?: number; record?: ScanRecord }> {
+  const formData = await buildImageFormData(uri);
+  const response = await fetch(`${BACKEND_URL}/history/scan`, {
+    method: 'POST',
+    body: formData,
+  });
+  return response.json();
+}
+
+// 저장된 모든 이력을 최신순으로 가져오는 함수입니다.
+export async function getHistory(): Promise<{ count: number; records: ScanRecord[] }> {
+  const response = await fetch(`${BACKEND_URL}/history`);
+  return response.json();
+}

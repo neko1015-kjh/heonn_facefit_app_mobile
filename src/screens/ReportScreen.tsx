@@ -1,6 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image,
   LayoutChangeEvent,
@@ -10,68 +9,45 @@ import {
   Text,
   View,
 } from 'react-native';
-import { analyzeFaceScores, FaceScore } from '../api';
+import { BACKEND_URL, getHistory, ScanRecord } from '../api';
 import { colors, radius } from '../theme';
 
 // [6] AI 변화 리포트 화면입니다.
-// 사용 전/후(Before & After) 비교 슬라이더와 실제 얼굴 점수 분석을 보여줍니다.
+// AI 스캔 탭에서 분석·저장한 기록을 모아, Before/After 비교와 점수 변화를 보여줍니다.
 const TABS = ['주간', '월간', '누적'];
 
-// 비교에 쓰는 얼굴 이미지 (프로토타입용 샘플 이미지)
-const FACE_IMAGE =
-  'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=600&q=80';
+// 서버 기준 상대 경로를 전체 사진 주소로 바꿉니다.
+function fullImageUrl(path: string) {
+  return `${BACKEND_URL}${path}`;
+}
 
-// 아직 분석 전일 때 보여줄 예시 점수입니다.
-const SAMPLE_SCORES = [
-  { label: '안면 비대칭 개선도', value: 82 },
-  { label: '좌우 균형 (부기)', value: 88 },
-];
-
-// 분석 상태: idle(대기) → analyzing(분석 중) → done(완료) → error(오류)
-type AnalyzeStatus = 'idle' | 'analyzing' | 'done' | 'error';
+// 날짜 문자열(2026-06-16T21:42:54)을 보기 좋게(2026.06.16) 다듬습니다.
+function formatDate(iso: string) {
+  return iso.slice(0, 10).replace(/-/g, '.');
+}
 
 export default function ReportScreen() {
-  const [activeTab, setActiveTab] = useState(0); // 선택된 기간 탭
-  const [sliderPos, setSliderPos] = useState(50); // 슬라이더 위치(%) 0~100
-  const [boxWidth, setBoxWidth] = useState(0); // 비교 영역의 실제 가로 길이
+  const [activeTab, setActiveTab] = useState(0);
+  const [sliderPos, setSliderPos] = useState(50);
+  const [boxWidth, setBoxWidth] = useState(0);
 
-  // 실제 점수 분석 관련 상태
-  const [status, setStatus] = useState<AnalyzeStatus>('idle');
-  const [realScores, setRealScores] = useState<FaceScore[] | null>(null);
-  const [analyzeMsg, setAnalyzeMsg] = useState('');
+  const [records, setRecords] = useState<ScanRecord[]>([]); // 저장된 이력(최신순)
+  const [refreshing, setRefreshing] = useState(false); // 새로고침 중 여부
 
-  // "내 사진으로 점수 분석" 버튼을 눌렀을 때
-  async function handlePickAndAnalyze() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setStatus('error');
-      setAnalyzeMsg('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
-      return;
-    }
+  // 화면이 열릴 때마다 이력을 불러옵니다.
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-    if (picked.canceled) return;
-
-    setStatus('analyzing');
-    setRealScores(null);
-    setAnalyzeMsg('');
-
+  async function loadHistory() {
+    setRefreshing(true);
     try {
-      const data = await analyzeFaceScores(picked.assets[0].uri);
-      if (data.detected && data.scores) {
-        setRealScores(data.scores);
-        setStatus('done');
-      } else {
-        setStatus('error');
-        setAnalyzeMsg(data.message || '얼굴을 분석하지 못했습니다.');
-      }
+      const data = await getHistory();
+      setRecords(data.records);
     } catch (e) {
-      console.log('점수 분석 실패:', e);
-      setStatus('error');
-      setAnalyzeMsg('백엔드 서버에 연결하지 못했습니다. 서버가 켜져 있는지 확인해 주세요.');
+      console.log('이력 불러오기 실패:', e);
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -80,7 +56,6 @@ export default function ReportScreen() {
     setBoxWidth(e.nativeEvent.layout.width);
   }
 
-  // 손가락이 닿은 가로 위치를 0~100% 값으로 바꿉니다.
   function updateFromTouch(locationX: number) {
     if (boxWidth <= 0) return;
     let percent = (locationX / boxWidth) * 100;
@@ -88,6 +63,16 @@ export default function ReportScreen() {
     if (percent > 100) percent = 100;
     setSliderPos(percent);
   }
+
+  // 최신 기록과 가장 오래된 기록 (Before/After 비교용)
+  const newest = records[0] ?? null;
+  const oldest = records.length > 0 ? records[records.length - 1] : null;
+  const previous = records[1] ?? null; // 직전 기록(변화 계산용)
+  const hasTwo = records.length >= 2;
+
+  // 비교에 쓸 사진 주소 (저장된 실제 기록의 사진)
+  const afterImage = newest ? fullImageUrl(newest.image_url) : '';
+  const beforeImage = oldest ? fullImageUrl(oldest.image_url) : '';
 
   return (
     <ScrollView
@@ -97,7 +82,7 @@ export default function ReportScreen() {
     >
       <Text style={styles.title}>AI 변화 리포트</Text>
 
-      {/* 기간 선택 탭 (주간/월간/누적) */}
+      {/* 기간 선택 탭 */}
       <View style={styles.tabBar}>
         {TABS.map((tab, idx) => {
           const active = idx === activeTab;
@@ -115,89 +100,120 @@ export default function ReportScreen() {
 
       {/* Before & After 비교 슬라이더 */}
       <View style={styles.sliderCard}>
+        {/* 비교 영역은 항상 그려서 가로 길이를 측정합니다(Before 사진을 정확히 그리기 위해). */}
         <View
           style={styles.sliderBox}
           onLayout={onBoxLayout}
-          onStartShouldSetResponder={() => true}
-          onMoveShouldSetResponder={() => true}
+          onStartShouldSetResponder={() => !!newest}
+          onMoveShouldSetResponder={() => !!newest}
           onResponderGrant={(e) => updateFromTouch(e.nativeEvent.locationX)}
           onResponderMove={(e) => updateFromTouch(e.nativeEvent.locationX)}
         >
-          {/* After 이미지 (배경, 밝고 선명하게) */}
-          <Image source={{ uri: FACE_IMAGE }} style={styles.image} resizeMode="cover" />
+          {newest ? (
+            <>
+              {/* After 이미지 (최신 기록) */}
+              <Image source={{ uri: afterImage }} style={styles.image} resizeMode="cover" />
 
-          {/* Before 이미지 (앞쪽, 왼쪽부터 슬라이더 위치까지만 보임) */}
-          <View style={[styles.beforeClip, { width: `${sliderPos}%` }]}>
-            <Image
-              source={{ uri: FACE_IMAGE }}
-              style={[styles.image, styles.beforeImage, { width: boxWidth }]}
-              resizeMode="cover"
-            />
-          </View>
+              {/* Before 이미지 (가장 오래된 기록, 왼쪽부터 슬라이더 위치까지만 보임) */}
+              {hasTwo && boxWidth > 0 && (
+                <View style={[styles.beforeClip, { width: (boxWidth * sliderPos) / 100 }]}>
+                  <Image
+                    source={{ uri: beforeImage }}
+                    style={[styles.image, { width: boxWidth }]}
+                    resizeMode="cover"
+                  />
+                </View>
+              )}
 
-          {/* 슬라이더 손잡이 (세로선 + 동그란 핸들) */}
-          <View style={[styles.sliderHandle, { left: `${sliderPos}%` }]}>
-            <View style={styles.handleKnob}>
-              <View style={styles.handleBar} />
-              <View style={styles.handleBar} />
+              {/* 슬라이더 손잡이 (기록이 2개 이상일 때만) */}
+              {hasTwo && boxWidth > 0 && (
+                <View style={[styles.sliderHandle, { left: (boxWidth * sliderPos) / 100 }]}>
+                  <View style={styles.handleKnob}>
+                    <View style={styles.handleBar} />
+                    <View style={styles.handleBar} />
+                  </View>
+                </View>
+              )}
+
+              {/* Before / After 라벨 (기록 날짜 표시) */}
+              {hasTwo && (
+                <Text style={[styles.tag, styles.tagBefore]}>
+                  Before · {oldest ? formatDate(oldest.created_at) : ''}
+                </Text>
+              )}
+              <Text style={[styles.tag, styles.tagAfter]}>
+                {hasTwo ? 'After · ' : ''}
+                {formatDate(newest.created_at)}
+              </Text>
+            </>
+          ) : (
+            // 아직 저장된 기록이 없을 때 보여줄 안내 박스
+            <View style={styles.placeholderBox}>
+              <Feather name="image" size={36} color={colors.textFainter} />
+              <Text style={styles.placeholderText}>
+                아직 저장된 기록이 없어요.{'\n'}아래 버튼으로 첫 사진을 분석해 보세요.
+              </Text>
             </View>
-          </View>
-
-          {/* Before / After 라벨 */}
-          <Text style={[styles.tag, styles.tagBefore]}>Before</Text>
-          <Text style={[styles.tag, styles.tagAfter]}>After</Text>
+          )}
         </View>
-        <Text style={styles.sliderHint}>← 좌우로 드래그해서 비교해 보세요 →</Text>
-      </View>
-
-      {/* 정량적 스코어 분석 */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>정량적 스코어 분석</Text>
-        {/* 실제 분석 결과인지 예시인지 표시 */}
-        <Text style={styles.scoreBadge}>
-          {status === 'done' ? '내 사진 분석 결과' : '예시'}
+        <Text style={styles.sliderHint}>
+          {hasTwo
+            ? '← 좌우로 드래그해서 처음과 최근을 비교해 보세요 →'
+            : '기록이 2개 이상 쌓이면 변화를 비교할 수 있어요.'}
         </Text>
       </View>
 
-      {/* 분석된 실제 점수가 있으면 그것을, 없으면 예시 점수를 보여줍니다. */}
-      <View style={{ gap: 12 }}>
-        {(realScores ?? SAMPLE_SCORES).map((item) => (
-          <View key={item.label} style={styles.scoreCard}>
-            <View style={styles.scoreRow}>
-              <Text style={styles.scoreLabel}>{item.label}</Text>
-              <Text style={styles.scoreValue}>{item.value}점</Text>
-            </View>
-            {/* 점수 막대 */}
-            <View style={styles.scoreTrack}>
-              <View style={[styles.scoreFill, { width: `${item.value}%` }]} />
-            </View>
-          </View>
-        ))}
+      {/* 점수 분석 + 직전 대비 변화 */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>정량적 스코어 분석</Text>
+        <Text style={styles.scoreBadge}>{newest ? `총 ${records.length}회 기록` : '예시'}</Text>
       </View>
 
-      {/* 오류/안내 메시지 */}
-      {status === 'error' && (
-        <View style={styles.msgBox}>
-          <Feather name="alert-circle" size={16} color={colors.red} />
-          <Text style={styles.msgText}>{analyzeMsg}</Text>
-        </View>
-      )}
+      <View style={{ gap: 12 }}>
+        {(newest ? newest.scores : SAMPLE_SCORES).map((score) => {
+          // 직전 기록에서 같은 항목의 점수를 찾아 변화량을 계산합니다.
+          const prevScore = previous?.scores.find((s) => s.key === score.key);
+          const delta = prevScore ? score.value - prevScore.value : null;
+          return (
+            <View key={score.label} style={styles.scoreCard}>
+              <View style={styles.scoreRow}>
+                <Text style={styles.scoreLabel}>{score.label}</Text>
+                <View style={styles.scoreRight}>
+                  {delta !== null && delta !== 0 && (
+                    <Text style={[styles.scoreDelta, { color: delta > 0 ? colors.emerald : colors.red }]}>
+                      {delta > 0 ? '▲' : '▼'} {Math.abs(delta)}
+                    </Text>
+                  )}
+                  <Text style={styles.scoreValue}>{score.value}점</Text>
+                </View>
+              </View>
+              <View style={styles.scoreTrack}>
+                <View style={[styles.scoreFill, { width: `${score.value}%` }]} />
+              </View>
+            </View>
+          );
+        })}
+      </View>
 
-      {/* 내 사진으로 실제 점수 분석 버튼 */}
+      {/* 안내: 기록은 AI 스캔에서 만들어집니다 */}
+      <Text style={styles.guideNote}>
+        새 기록은 <Text style={{ color: colors.amber400 }}>AI스캔</Text> 탭에서 사진을 분석하면
+        쌓입니다.
+      </Text>
+
+      {/* 기록 새로고침 버튼 */}
       <Pressable
-        style={[styles.analyzeButton, status === 'analyzing' && styles.analyzeButtonDisabled]}
-        onPress={handlePickAndAnalyze}
-        disabled={status === 'analyzing'}
+        style={[styles.refreshButton, refreshing && styles.refreshButtonDisabled]}
+        onPress={loadHistory}
+        disabled={refreshing}
       >
         <Feather
-          name={status === 'analyzing' ? 'activity' : 'camera'}
+          name="refresh-cw"
           size={18}
-          color={status === 'analyzing' ? colors.textFaint : colors.bg}
+          color={refreshing ? colors.textFaint : colors.bg}
         />
-        <Text
-          style={[styles.analyzeButtonText, status === 'analyzing' && { color: colors.textFaint }]}
-        >
-          {status === 'analyzing' ? '분석 중...' : '내 사진으로 점수 분석'}
+        <Text style={[styles.refreshButtonText, refreshing && { color: colors.textFaint }]}>
+          {refreshing ? '불러오는 중...' : '기록 새로고침'}
         </Text>
       </Pressable>
 
@@ -209,6 +225,12 @@ export default function ReportScreen() {
     </ScrollView>
   );
 }
+
+// 아직 기록이 없을 때 보여줄 예시 점수
+const SAMPLE_SCORES = [
+  { key: 'symmetry', label: '안면 비대칭 개선도', value: 82 },
+  { key: 'balance', label: '좌우 균형 (부기)', value: 88 },
+];
 
 const styles = StyleSheet.create({
   container: {
@@ -269,16 +291,25 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  placeholderBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 24,
+  },
+  placeholderText: {
+    color: colors.textFaint,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   beforeClip: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: 0,
     overflow: 'hidden',
-  },
-  beforeImage: {
-    height: '100%',
-    opacity: 0.7, // Before는 살짝 어둡게(개선 전 느낌)
   },
   sliderHandle: {
     position: 'absolute',
@@ -354,40 +385,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     overflow: 'hidden',
   },
-  msgBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-    padding: 12,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.3)',
-  },
-  msgText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    flex: 1,
-  },
-  analyzeButton: {
-    marginTop: 16,
-    paddingVertical: 16,
-    backgroundColor: colors.text,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
-  analyzeButtonDisabled: {
-    backgroundColor: colors.surface2,
-  },
-  analyzeButtonText: {
-    color: colors.bg,
-    fontWeight: '500',
-    fontSize: 15,
-  },
   scoreCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
@@ -411,7 +408,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   scoreDelta: {
-    color: colors.emerald,
     fontSize: 12,
   },
   scoreValue: {
@@ -431,8 +427,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.amber500,
     borderRadius: radius.full,
   },
+  guideNote: {
+    color: colors.textFaint,
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 20,
+    lineHeight: 19,
+  },
+  refreshButton: {
+    marginTop: 12,
+    paddingVertical: 16,
+    backgroundColor: colors.text,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshButtonDisabled: {
+    backgroundColor: colors.surface2,
+  },
+  refreshButtonText: {
+    color: colors.bg,
+    fontWeight: '500',
+    fontSize: 15,
+  },
   simButton: {
-    marginTop: 24,
+    marginTop: 16,
     paddingVertical: 16,
     backgroundColor: colors.surface,
     borderWidth: 1,
