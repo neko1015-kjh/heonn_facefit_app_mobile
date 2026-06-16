@@ -1,15 +1,11 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { getRecommendations, RecommendationResult } from '../api';
 import { colors, radius } from '../theme';
 
 // [7] 스토어 / 마이페이지 화면입니다.
-// 맞춤 화장품 추천과 내 기기 정보·관리를 보여줍니다.
-
-// 추천 제품 데이터 (프로토타입용)
-const PRODUCTS = [
-  { name: 'HeOnn 리페어 앰플', desc: '고주파 괄사 전용', icon: 'droplet' as const },
-  { name: 'HeOnn 진정 크림', desc: '마사지 후 피부 진정', icon: 'circle' as const },
-];
+// 최신 얼굴 분석(부기·피부톤)에 맞춘 추천 제품과 내 기기 정보·관리를 보여줍니다.
 
 // 내 기기 정보 항목 (2열로 표시)
 const DEVICE_INFO = [
@@ -20,6 +16,15 @@ const DEVICE_INFO = [
 ];
 
 export default function StoreScreen() {
+  const [rec, setRec] = useState<RecommendationResult | null>(null);
+
+  // 화면이 열릴 때 최신 분석 기반 추천을 불러옵니다.
+  useEffect(() => {
+    getRecommendations()
+      .then(setRec)
+      .catch((e) => console.log('추천 불러오기 실패:', e));
+  }, []);
+
   return (
     <ScrollView
       style={styles.container}
@@ -37,24 +42,36 @@ export default function StoreScreen() {
         <Ionicons name="sparkles" size={18} color={colors.amber500} />
         <Text style={styles.sectionTitle}>너를 위한 맞춤 솔루션</Text>
       </View>
-      <View style={styles.tagRow}>
-        <Text style={styles.analysisLabel}>AI 데이터 분석 기반:</Text>
-        <Text style={styles.analysisChip}>탄력 저하 피부</Text>
-      </View>
 
-      {/* 추천 제품 가로 스크롤 */}
+      {/* 분석 요약 (있으면 분석 기반, 없으면 안내) */}
+      {rec?.has_record && rec.summary ? (
+        <View style={styles.tagWrap}>
+          <Text style={styles.analysisLabel}>AI 분석 기반:</Text>
+          <Text style={styles.analysisChip}>부기 {rec.summary.balance}점</Text>
+          <Text style={styles.analysisChip}>{rec.summary.skin_tone}</Text>
+          <Text style={styles.analysisChip}>{rec.summary.skin_redness}</Text>
+        </View>
+      ) : (
+        <Text style={styles.analysisLabel}>
+          {rec?.message ?? 'AI스캔에서 분석하면 맞춤 추천을 받을 수 있어요.'}
+        </Text>
+      )}
+
+      {/* 추천 제품 가로 스크롤 (분석 결과에 따라 달라짐) */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.productRow}
       >
-        {PRODUCTS.map((p) => (
-          <View key={p.name} style={styles.productCard}>
+        {(rec?.products ?? []).map((p, idx) => (
+          <View key={`${p.name}-${idx}`} style={styles.productCard}>
             <View style={styles.productThumb}>
-              <Feather name={p.icon} size={32} color="rgba(217,119,6,0.5)" />
+              <Feather name="droplet" size={32} color="rgba(217,119,6,0.5)" />
             </View>
             <Text style={styles.productName}>{p.name}</Text>
             <Text style={styles.productDesc}>{p.desc}</Text>
+            {/* 추천 이유 (분석 결과 기반) */}
+            <Text style={styles.productReason}>{p.reason}</Text>
             <Pressable style={styles.buyButton}>
               <Text style={styles.buyButtonText}>구매하기</Text>
             </Pressable>
@@ -161,8 +178,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 15,
   },
-  tagRow: {
+  tagWrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 8,
     marginBottom: 16,
@@ -170,6 +188,7 @@ const styles = StyleSheet.create({
   analysisLabel: {
     color: colors.textFaint,
     fontSize: 14,
+    marginBottom: 16,
   },
   analysisChip: {
     color: colors.amber400,
@@ -187,7 +206,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   productCard: {
-    width: 140,
+    width: 170,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -211,7 +230,14 @@ const styles = StyleSheet.create({
   productDesc: {
     color: colors.textFaint,
     fontSize: 12,
+    marginBottom: 8,
+  },
+  productReason: {
+    color: colors.amber400,
+    fontSize: 11,
+    lineHeight: 16,
     marginBottom: 12,
+    minHeight: 32,
   },
   buyButton: {
     paddingVertical: 8,

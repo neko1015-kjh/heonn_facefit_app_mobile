@@ -140,3 +140,29 @@ export async function getHistory(): Promise<{ count: number; records: ScanRecord
   const response = await fetch(`${BACKEND_URL}/history`);
   return response.json();
 }
+
+// 추천 제품 하나의 형태입니다.
+export type RecommendedProduct = {
+  name: string; // 제품 이름
+  desc: string; // 간단 설명
+  reason: string; // 추천 이유(분석 결과 기반)
+};
+
+// 맞춤 추천 결과의 형태입니다.
+export type RecommendationResult = {
+  has_record: boolean; // 분석 기록이 있는지
+  message?: string; // 기록이 없을 때 안내 문구
+  summary?: {
+    balance: number; // 부기(좌우 균형) 점수
+    symmetry: number; // 비대칭 점수
+    skin_tone: string; // 피부 톤(밝은/중간/어두운)
+    skin_redness: string; // 붉은기 정도
+  };
+  products: RecommendedProduct[]; // 추천 제품 목록
+};
+
+// 최신 분석 결과 기반 맞춤 추천을 가져오는 함수입니다.
+export async function getRecommendations(): Promise<RecommendationResult> {
+  const response = await fetch(`${BACKEND_URL}/recommendations`);
+  return response.json();
+}
