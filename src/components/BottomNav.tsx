@@ -1,5 +1,6 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Text from './AppText';
 import { colors } from '../theme';
 
 // 하단 탭 바에서 사용하는 탭 종류입니다.

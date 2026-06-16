@@ -3,13 +3,14 @@ import { useEffect, useState } from 'react';
 import {
   Image,
   LayoutChangeEvent,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
-import { BACKEND_URL, getHistory, ScanRecord } from '../api';
+import Text from '../components/AppText';
+import { BACKEND_URL, getHistory, FaceScore, ScanRecord } from '../api';
 import { colors, radius } from '../theme';
 
 // [6] AI 변화 리포트 화면입니다.
@@ -26,6 +27,29 @@ function formatDate(iso: string) {
   return iso.slice(0, 10).replace(/-/g, '.');
 }
 
+// 항목별 1개월 뒤 예상 변화 설명입니다.
+const PREDICT_NOTE: Record<string, string> = {
+  symmetry: '좌우 대칭이 좋아져 얼굴 윤곽이 또렷해질 것으로 예상돼요.',
+  balance: '부기가 줄어 턱·볼 라인이 갸름해질 것으로 예상돼요.',
+};
+
+// 현재 점수로 "꾸준히 케어했을 때 1개월 뒤 예상 점수"를 계산합니다.
+// 점수가 낮을수록 개선 여지가 커서 더 많이 오르도록 했습니다. (최소 +2점)
+function predictScores(scores: FaceScore[]) {
+  return scores.map((s) => {
+    const gain = Math.max(2, Math.round((100 - s.value) * 0.3));
+    const predicted = Math.min(100, s.value + gain);
+    return {
+      key: s.key,
+      label: s.label,
+      current: s.value,
+      predicted,
+      gain: predicted - s.value,
+      note: PREDICT_NOTE[s.key] ?? '꾸준한 케어로 개선이 기대돼요.',
+    };
+  });
+}
+
 export default function ReportScreen() {
   const [activeTab, setActiveTab] = useState(0);
   const [sliderPos, setSliderPos] = useState(50);
@@ -33,6 +57,9 @@ export default function ReportScreen() {
 
   const [records, setRecords] = useState<ScanRecord[]>([]); // 저장된 이력(최신순)
   const [refreshing, setRefreshing] = useState(false); // 새로고침 중 여부
+  const [historyOpen, setHistoryOpen] = useState(false); // 기록 팝업 열림 여부
+  const [simOpen, setSimOpen] = useState(false); // 예상 시뮬레이션 팝업 열림 여부
+  const [imgRatio, setImgRatio] = useState<number | null>(null); // 사진 세로/가로 비율
 
   // 화면이 열릴 때마다 이력을 불러옵니다.
   useEffect(() => {
@@ -74,7 +101,12 @@ export default function ReportScreen() {
   const afterImage = newest ? fullImageUrl(newest.image_url) : '';
   const beforeImage = oldest ? fullImageUrl(oldest.image_url) : '';
 
+  // 비교 영역 높이: 사진 비율에 맞춰 잡되, 너무 길어지지 않게 제한합니다.
+  const boxHeight =
+    imgRatio && boxWidth > 0 ? Math.min(Math.round(boxWidth * imgRatio), 440) : 300;
+
   return (
+    <>
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -102,7 +134,7 @@ export default function ReportScreen() {
       <View style={styles.sliderCard}>
         {/* 비교 영역은 항상 그려서 가로 길이를 측정합니다(Before 사진을 정확히 그리기 위해). */}
         <View
-          style={styles.sliderBox}
+          style={[styles.sliderBox, { height: boxHeight }]}
           onLayout={onBoxLayout}
           onStartShouldSetResponder={() => !!newest}
           onMoveShouldSetResponder={() => !!newest}
@@ -111,8 +143,17 @@ export default function ReportScreen() {
         >
           {newest ? (
             <>
-              {/* After 이미지 (최신 기록) */}
-              <Image source={{ uri: afterImage }} style={styles.image} resizeMode="cover" />
+              {/* After 이미지 (최신 기록) — 얼굴 전체가 잘리지 않도록 contain */}
+              <Image
+                source={{ uri: afterImage }}
+                style={styles.image}
+                resizeMode="contain"
+                onLoad={(e) => {
+                  // 사진 원본 크기를 읽어 비율(세로/가로)을 저장합니다.
+                  const src = e?.nativeEvent?.source;
+                  if (src?.width && src?.height) setImgRatio(src.height / src.width);
+                }}
+              />
 
               {/* Before 이미지 (가장 오래된 기록, 왼쪽부터 슬라이더 위치까지만 보임) */}
               {hasTwo && boxWidth > 0 && (
@@ -120,7 +161,7 @@ export default function ReportScreen() {
                   <Image
                     source={{ uri: beforeImage }}
                     style={[styles.image, { width: boxWidth }]}
-                    resizeMode="cover"
+                    resizeMode="contain"
                   />
                 </View>
               )}
@@ -166,7 +207,15 @@ export default function ReportScreen() {
       {/* 점수 분석 + 직전 대비 변화 */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>정량적 스코어 분석</Text>
-        <Text style={styles.scoreBadge}>{newest ? `총 ${records.length}회 기록` : '예시'}</Text>
+        {newest ? (
+          // 누르면 그동안의 기록을 팝업으로 보여줍니다.
+          <Pressable style={styles.scoreBadgeBtn} onPress={() => setHistoryOpen(true)}>
+            <Text style={styles.scoreBadgeText}>총 {records.length}회 기록</Text>
+            <Feather name="chevron-right" size={13} color={colors.amber400} />
+          </Pressable>
+        ) : (
+          <Text style={styles.scoreBadge}>예시</Text>
+        )}
       </View>
 
       <View style={{ gap: 12 }}>
@@ -218,11 +267,149 @@ export default function ReportScreen() {
       </Pressable>
 
       {/* 예측 시뮬레이션 버튼 */}
-      <Pressable style={styles.simButton}>
+      <Pressable style={styles.simButton} onPress={() => setSimOpen(true)}>
         <Ionicons name="sparkles" size={18} color={colors.amber400} />
         <Text style={styles.simButtonText}>1개월 뒤 예상 시뮬레이션 보기</Text>
       </Pressable>
     </ScrollView>
+
+    {/* 기록 히스토리 팝업 */}
+    <Modal
+      visible={historyOpen}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setHistoryOpen(false)}
+    >
+      {/* 어두운 배경 (누르면 닫힘) */}
+      <Pressable style={styles.modalOverlay} onPress={() => setHistoryOpen(false)}>
+        {/* 팝업 카드 (안쪽을 눌러도 닫히지 않도록 이벤트 차단) */}
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>분석 기록 ({records.length}회)</Text>
+            <Pressable onPress={() => setHistoryOpen(false)} hitSlop={10}>
+              <Feather name="x" size={22} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+            {records.map((r, idx) => {
+              // 최신순이므로 회차 번호는 (전체 - 인덱스)
+              const round = records.length - idx;
+              const sym = r.scores.find((s) => s.key === 'symmetry')?.value;
+              const bal = r.scores.find((s) => s.key === 'balance')?.value;
+              return (
+                <View key={r.id} style={styles.historyRow}>
+                  <Image
+                    source={{ uri: fullImageUrl(r.image_url) }}
+                    style={styles.historyThumb}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.historyInfo}>
+                    <Text style={styles.historyDate}>
+                      {round}회차 · {formatDate(r.created_at)}
+                    </Text>
+                    <Text style={styles.historyScores}>
+                      비대칭 {sym}점 · 균형 {bal}점
+                    </Text>
+                  </View>
+                  {idx === 0 && <Text style={styles.latestTag}>최근</Text>}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+
+    {/* 1개월 뒤 예상 시뮬레이션 전체 팝업 */}
+    <Modal
+      visible={simOpen}
+      animationType="slide"
+      onRequestClose={() => setSimOpen(false)}
+    >
+      <View style={styles.simScreen}>
+        {/* 상단 헤더 */}
+        <View style={styles.simHeader}>
+          <View style={styles.simHeaderTitle}>
+            <Ionicons name="sparkles" size={20} color={colors.amber400} />
+            <Text style={styles.simTitle}>1개월 뒤 예상 시뮬레이션</Text>
+          </View>
+          <Pressable onPress={() => setSimOpen(false)} hitSlop={10}>
+            <Feather name="x" size={24} color={colors.textMuted} />
+          </Pressable>
+        </View>
+
+        {newest ? (
+          <ScrollView
+            contentContainerStyle={styles.simContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.simIntro}>
+              최근 분석({formatDate(newest.created_at)})을 바탕으로, HeOnn Facefit을 매일 꾸준히
+              사용했을 때 예상되는 변화예요.
+            </Text>
+
+            {/* 현재 분석한 얼굴 사진 (참고용) */}
+            <View style={styles.simImageWrap}>
+              <Image
+                source={{ uri: afterImage }}
+                style={styles.simImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.simImageTag}>현재 분석 얼굴</Text>
+            </View>
+
+            {/* 항목별 예상 변화 */}
+            {predictScores(newest.scores).map((p) => (
+              <View key={p.key} style={styles.simCard}>
+                <View style={styles.simCardTop}>
+                  <Text style={styles.simCardLabel}>{p.label}</Text>
+                  <Text style={styles.simCardDelta}>▲ {p.gain}점</Text>
+                </View>
+
+                {/* 현재 → 예상 점수 막대 */}
+                <View style={styles.simBarRow}>
+                  <Text style={styles.simBarValue}>{p.current}</Text>
+                  <View style={styles.simTrack}>
+                    {/* 현재 점수(진한 부분) */}
+                    <View style={[styles.simFillNow, { width: `${p.current}%` }]} />
+                    {/* 예상 추가 상승분(연한 부분) */}
+                    <View
+                      style={[
+                        styles.simFillGain,
+                        { left: `${p.current}%`, width: `${p.gain}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.simBarPredicted}>{p.predicted}</Text>
+                </View>
+
+                <Text style={styles.simNote}>{p.note}</Text>
+              </View>
+            ))}
+
+            {/* 안내 문구 */}
+            <Text style={styles.simDisclaimer}>
+              ※ 본 예측은 분석 데이터를 바탕으로 한 추정이며, 실제 결과는 사용 습관·개인차에 따라
+              달라질 수 있습니다.
+            </Text>
+
+            <Pressable style={styles.simCloseBtn} onPress={() => setSimOpen(false)}>
+              <Text style={styles.simCloseBtnText}>닫기</Text>
+            </Pressable>
+          </ScrollView>
+        ) : (
+          // 분석 기록이 없을 때
+          <View style={styles.simEmpty}>
+            <Feather name="camera" size={36} color={colors.textFainter} />
+            <Text style={styles.simEmptyText}>
+              먼저 AI스캔에서 얼굴을 분석하면{'\n'}예상 변화를 볼 수 있어요.
+            </Text>
+          </View>
+        )}
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -384,6 +571,254 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     overflow: 'hidden',
+  },
+  // 누를 수 있는 '총 N회 기록' 배지
+  scoreBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: 'rgba(245,158,11,0.1)',
+    paddingLeft: 10,
+    paddingRight: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  scoreBadgeText: {
+    color: colors.amber400,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  // 기록 팝업
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    maxHeight: '75%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    padding: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalList: {
+    flexGrow: 0,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(39,39,42,0.7)',
+  },
+  historyThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyDate: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  historyScores: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  latestTag: {
+    color: colors.bg,
+    backgroundColor: colors.amber500,
+    fontSize: 10,
+    fontWeight: '700',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  // 1개월 뒤 예상 시뮬레이션 전체 팝업
+  simScreen: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  simHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 56,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  simHeaderTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  simTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  simContent: {
+    padding: 20,
+    paddingBottom: 48,
+  },
+  simIntro: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  simImageWrap: {
+    height: 240,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    marginBottom: 20,
+    justifyContent: 'center',
+  },
+  simImage: {
+    width: '100%',
+    height: '100%',
+  },
+  simImageTag: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    color: colors.textMuted,
+    backgroundColor: 'rgba(9,9,11,0.6)',
+    fontSize: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  simCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: 16,
+    marginBottom: 12,
+  },
+  simCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  simCardLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  simCardDelta: {
+    color: colors.emerald,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  simBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  simBarValue: {
+    color: colors.textFaint,
+    fontSize: 12,
+    width: 24,
+    textAlign: 'right',
+  },
+  simBarPredicted: {
+    color: colors.amber400,
+    fontSize: 13,
+    fontWeight: '700',
+    width: 24,
+  },
+  simTrack: {
+    flex: 1,
+    height: 10,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  simFillNow: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: colors.amber500,
+  },
+  simFillGain: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(245,158,11,0.4)',
+  },
+  simNote: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  simDisclaimer: {
+    color: colors.textFainter,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  simCloseBtn: {
+    paddingVertical: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  simCloseBtnText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  simEmpty: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+    padding: 24,
+  },
+  simEmptyText: {
+    color: colors.textFaint,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 21,
   },
   scoreCard: {
     backgroundColor: colors.surface,

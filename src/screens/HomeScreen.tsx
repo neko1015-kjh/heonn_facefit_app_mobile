@@ -1,5 +1,6 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Text from '../components/AppText';
 import { colors, radius } from '../theme';
 import type { TabKey } from '../components/BottomNav';
 
@@ -19,7 +20,7 @@ export default function HomeScreen({ goTab }: Props) {
     >
       {/* 상단: 로고 + 알림/프로필 아이콘 */}
       <View style={styles.topBar}>
-        <Text style={styles.logo}>HeOnn</Text>
+        <Text style={styles.logo}>HeOnn Facefit</Text>
         <View style={styles.topIcons}>
           <View>
             <Feather name="bell" size={24} color={colors.textMuted} />
@@ -110,7 +111,7 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontSize: 24,
-    fontFamily: 'serif',
+    fontWeight: '700',
     color: colors.amber300,
   },
   topIcons: {

@@ -1,21 +1,27 @@
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { saveScan, FaceScore } from '../api';
+import { Animated, Easing, Image, Pressable, StyleSheet, View } from 'react-native';
+import Text from '../components/AppText';
+import { saveScan, FaceScore, LandmarkPoint } from '../api';
 import { colors, radius } from '../theme';
 
 // [4] AI 정밀 안면 스캔 화면입니다.
-// "사진 선택"으로 사진을 고르면 백엔드로 보내 실제로 얼굴을 분석하고,
-// 그 결과(특징점·점수)를 "기록"으로 저장합니다. 저장된 기록은 리포트 탭에서 전/후·변화로 확인합니다.
+// 사진을 고르면 백엔드로 보내 실제로 얼굴을 분석하고, 그 결과(점 478개·점수)를 기록으로 저장합니다.
+// 분석이 끝나면 검출된 특징점 478개를 사진 위에 직접 그려서 보여줍니다.
 
 // 화면 상태: idle(대기) → analyzing(분석 중) → done(완료) → error(오류)
 type Status = 'idle' | 'analyzing' | 'done' | 'error';
 
+// 사진을 표시할 영역의 기준 크기
+const BOX_W = 300; // 기준 가로
+const MAX_H = 380; // 최대 세로(너무 긴 세로 사진 방지)
+
 export default function ScanScreen() {
   const [status, setStatus] = useState<Status>('idle');
   const [imageUri, setImageUri] = useState<string | null>(null); // 고른 사진
-  const [landmarkCount, setLandmarkCount] = useState<number | null>(null); // 찾은 특징점 수
+  const [landmarks, setLandmarks] = useState<LandmarkPoint[] | null>(null); // 점 좌표(0~1)
+  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [scores, setScores] = useState<FaceScore[] | null>(null); // 계산된 점수
   const [message, setMessage] = useState(''); // 안내/오류 문구
 
@@ -64,16 +70,17 @@ export default function ScanScreen() {
     const uri = picked.assets[0].uri;
     setImageUri(uri);
     setScores(null);
-    setLandmarkCount(null);
+    setLandmarks(null);
+    setImageSize(null);
     setMessage('');
     setStatus('analyzing');
 
-    // 사진을 백엔드로 보내 분석 + 기록 저장까지 한 번에 처리합니다.
     try {
       const data = await saveScan(uri);
       if (data.detected && data.record) {
-        setLandmarkCount(data.landmark_count ?? null);
         setScores(data.record.scores);
+        setLandmarks(data.landmarks ?? null);
+        setImageSize(data.image_size ?? null);
         setStatus('done');
       } else {
         setStatus('error');
@@ -93,6 +100,21 @@ export default function ScanScreen() {
   });
 
   const isAnalyzing = status === 'analyzing';
+  const showLandmarks = status === 'done' && landmarks && imageSize;
+
+  // 사진의 가로세로 비율에 맞춰 표시 크기를 계산합니다(점 위치를 정확히 맞추기 위해).
+  let dispW = BOX_W;
+  let dispH = BOX_W;
+  if (imageSize) {
+    const ratio = imageSize.height / imageSize.width;
+    if (BOX_W * ratio <= MAX_H) {
+      dispW = BOX_W;
+      dispH = Math.round(BOX_W * ratio);
+    } else {
+      dispH = MAX_H;
+      dispW = Math.round(MAX_H / ratio);
+    }
+  }
 
   return (
     <View style={styles.container}>
@@ -101,23 +123,37 @@ export default function ScanScreen() {
       </View>
 
       <View style={styles.center}>
-        {/* 얼굴 스캔 박스 */}
-        <View style={styles.scanBox}>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.pickedImage} resizeMode="cover" />
-          ) : (
-            <View style={[styles.guideCircle, { borderColor: colors.textFainter }]} />
-          )}
-
-          {isAnalyzing && (
-            <View style={styles.scanOverlay}>
-              <Animated.View
-                style={[styles.scanLine, { transform: [{ translateY: lineTranslate }] }]}
+        {showLandmarks ? (
+          // 분석 완료: 사진을 비율에 맞춰 표시하고 그 위에 점 478개를 찍습니다.
+          <View style={[styles.landmarkBox, { width: dispW, height: dispH }]}>
+            <Image source={{ uri: imageUri! }} style={styles.fill} resizeMode="cover" />
+            {landmarks!.map((p, i) => (
+              <View
+                key={i}
+                style={[styles.dot, { left: p.x * dispW - 1, top: p.y * dispH - 1 }]}
               />
-              <Text style={styles.scanningText}>얼굴 특징점 분석 중...</Text>
-            </View>
-          )}
-        </View>
+            ))}
+            <Text style={styles.dotCaption}>특징점 {landmarks!.length}개</Text>
+          </View>
+        ) : (
+          // 대기/분석 중: 정사각형 박스
+          <View style={styles.scanBox}>
+            {imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.fill} resizeMode="cover" />
+            ) : (
+              <View style={[styles.guideCircle, { borderColor: colors.textFainter }]} />
+            )}
+
+            {isAnalyzing && (
+              <View style={styles.scanOverlay}>
+                <Animated.View
+                  style={[styles.scanLine, { transform: [{ translateY: lineTranslate }] }]}
+                />
+                <Text style={styles.scanningText}>얼굴 특징점 분석 중...</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* 상태별 안내 / 결과 표시 */}
         {status === 'idle' && (
@@ -130,13 +166,8 @@ export default function ScanScreen() {
           <View style={styles.resultBox}>
             <View style={styles.resultRow}>
               <Feather name="check-circle" size={18} color={colors.emerald} />
-              <Text style={styles.resultTitle}>얼굴 분석 완료 · 기록 저장됨</Text>
+              <Text style={styles.resultTitle}>분석 완료 · 기록 저장됨</Text>
             </View>
-            {landmarkCount !== null && (
-              <Text style={styles.resultSub}>특징점 {landmarkCount}개 검출</Text>
-            )}
-
-            {/* 계산된 점수 표시 */}
             <View style={styles.scoreList}>
               {scores.map((s) => (
                 <View key={s.key} style={styles.scoreItem}>
@@ -145,8 +176,7 @@ export default function ScanScreen() {
                 </View>
               ))}
             </View>
-
-            <Text style={styles.hintText}>리포트 탭에서 전/후 변화를 확인하세요.</Text>
+            <Text style={styles.hintText}>리포트·마이 탭에서 변화와 추천을 확인하세요.</Text>
           </View>
         )}
 
@@ -216,9 +246,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  pickedImage: {
+  landmarkBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  fill: {
     width: '100%',
     height: '100%',
+  },
+  // 얼굴 위에 찍는 작은 점
+  dot: {
+    position: 'absolute',
+    width: 2.5,
+    height: 2.5,
+    borderRadius: 2,
+    backgroundColor: colors.amber400,
+    opacity: 0.85,
+  },
+  dotCaption: {
+    position: 'absolute',
+    bottom: 8,
+    right: 10,
+    color: colors.amber400,
+    fontSize: 11,
+    fontWeight: '500',
+    backgroundColor: 'rgba(9,9,11,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   guideCircle: {
     width: 180,
@@ -258,7 +317,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   resultBox: {
-    marginTop: 24,
+    marginTop: 20,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -311,6 +370,7 @@ const styles = StyleSheet.create({
     color: colors.textFaint,
     fontSize: 12,
     marginTop: 12,
+    textAlign: 'center',
   },
   footer: {
     paddingHorizontal: 24,

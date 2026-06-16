@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Text from '../components/AppText';
 import { colors, radius } from '../theme';
 
 // [1] 로그인(온보딩) 화면입니다.
@@ -14,7 +15,7 @@ export default function LoginScreen({ onLogin }: Props) {
     <View style={styles.container}>
       {/* 가운데 영역: 로고와 안내 문구, 로그인 버튼들 */}
       <View style={styles.center}>
-        <Text style={styles.logo}>HeOnn</Text>
+        <Text style={styles.logo}>HeOnn Facefit</Text>
         <Text style={styles.tagline}>초개인화 맞춤형 뷰티 플랫폼</Text>
 
         {/* 큰 원형 로고 아이콘 */}
@@ -73,8 +74,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    fontSize: 40,
-    fontFamily: 'serif',
+    fontSize: 34,
+    fontWeight: '700',
     color: colors.amber300,
     marginBottom: 8,
   },

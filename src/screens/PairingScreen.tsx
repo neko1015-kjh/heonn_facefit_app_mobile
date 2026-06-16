@@ -1,6 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import Text from '../components/AppText';
 import { colors, radius } from '../theme';
 
 // [2] 디바이스 페어링(블루투스 연결) 화면입니다.

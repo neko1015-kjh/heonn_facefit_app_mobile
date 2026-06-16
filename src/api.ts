@@ -123,10 +123,20 @@ async function buildImageFormData(uri: string): Promise<FormData> {
   return formData;
 }
 
+// 얼굴 점 하나의 화면 좌표(0~1 비율)입니다.
+export type LandmarkPoint = { x: number; y: number };
+
 // 사진을 분석하고 그 결과를 이력으로 저장하는 함수입니다.
 export async function saveScan(
   uri: string
-): Promise<{ detected: boolean; message: string; landmark_count?: number; record?: ScanRecord }> {
+): Promise<{
+  detected: boolean;
+  message: string;
+  landmark_count?: number;
+  image_size?: { width: number; height: number };
+  landmarks?: LandmarkPoint[];
+  record?: ScanRecord;
+}> {
   const formData = await buildImageFormData(uri);
   const response = await fetch(`${BACKEND_URL}/history/scan`, {
     method: 'POST',
@@ -146,6 +156,7 @@ export type RecommendedProduct = {
   name: string; // 제품 이름
   desc: string; // 간단 설명
   reason: string; // 추천 이유(분석 결과 기반)
+  image?: string; // 대표 이미지 주소
 };
 
 // 맞춤 추천 결과의 형태입니다.

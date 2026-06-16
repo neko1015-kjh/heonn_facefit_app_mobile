@@ -1,3 +1,4 @@
+import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -23,6 +24,19 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('login');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [pairingState, setPairingState] = useState<PairingState>('searching');
+
+  // Pretendard 폰트 파일들을 불러옵니다. (다 불러오기 전까지는 빈 화면 표시)
+  const [fontsLoaded] = useFonts({
+    'Pretendard-Regular': require('./assets/fonts/Pretendard-Regular.otf'),
+    'Pretendard-Medium': require('./assets/fonts/Pretendard-Medium.otf'),
+    'Pretendard-SemiBold': require('./assets/fonts/Pretendard-SemiBold.otf'),
+    'Pretendard-Bold': require('./assets/fonts/Pretendard-Bold.otf'),
+  });
+
+  // 폰트가 준비되지 않았으면 어두운 빈 화면만 잠깐 보여줍니다.
+  if (!fontsLoaded) {
+    return <View style={styles.root} />;
+  }
 
   // 로그인 버튼을 눌렀을 때: 페어링 화면으로 이동 → 2초 뒤 기기 발견
   function handleLogin(provider: string) {
