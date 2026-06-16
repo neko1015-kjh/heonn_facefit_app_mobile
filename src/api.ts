@@ -1,6 +1,8 @@
 // 백엔드(FastAPI 서버)와 통신하기 위한 설정과 함수 모음입니다.
 // 별도 폴더(../heonn_facefit_app_backend)의 Python 서버와 연결합니다.
 
+import { Platform } from 'react-native';
+
 // 백엔드 서버 주소입니다.
 // FastAPI 서버는 보통 8000번 포트에서 실행되므로 기본값으로 둡니다.
 //
@@ -22,4 +24,80 @@ export async function checkConnection(): Promise<boolean> {
     console.log('백엔드 연결 실패:', error);
     return false;
   }
+}
+
+// 백엔드가 돌려주는 얼굴 분석 결과의 형태입니다.
+export type LandmarkResult = {
+  detected: boolean; // 얼굴을 찾았는지 여부
+  message: string; // 사람이 읽을 수 있는 안내 문구
+  landmark_count?: number; // 찾은 특징점(점) 개수
+  image_size?: { width: number; height: number }; // 사진 크기
+  landmarks?: { x: number; y: number; z: number }[]; // 점들의 좌표(0~1 비율)
+};
+
+// 선택한 사진을 백엔드로 보내 얼굴 랜드마크(특징점)를 분석받는 함수입니다.
+// uri: 사진의 위치(앱에서 사진을 고르면 받는 값)
+export async function sendImageForLandmarks(uri: string): Promise<LandmarkResult> {
+  // 서버에 파일을 보내기 위한 데이터 묶음을 만듭니다.
+  const formData = new FormData();
+
+  if (Platform.OS === 'web') {
+    // 웹에서는 사진 주소를 실제 파일 데이터(Blob)로 바꿔서 담습니다.
+    const res = await fetch(uri);
+    const blob = await res.blob();
+    formData.append('file', blob, 'photo.jpg');
+  } else {
+    // 휴대폰(iOS/Android)에서는 파일 정보를 형태에 맞춰 담습니다.
+    formData.append('file', {
+      uri,
+      name: 'photo.jpg',
+      type: 'image/jpeg',
+    } as any);
+  }
+
+  // 백엔드의 얼굴 분석 주소로 사진을 전송하고, 결과(JSON)를 돌려받습니다.
+  const response = await fetch(`${BACKEND_URL}/scan/landmarks`, {
+    method: 'POST',
+    body: formData,
+  });
+  return response.json();
+}
+
+// 얼굴 점수 하나의 형태입니다. (예: 안면 비대칭 개선도 95점)
+export type FaceScore = {
+  key: string; // 점수 종류 식별자
+  label: string; // 화면에 보일 이름
+  value: number; // 0~100 점수
+};
+
+// 점수 분석 결과의 형태입니다.
+export type AnalyzeResult = {
+  detected: boolean; // 얼굴을 찾았는지 여부
+  message: string; // 안내 문구
+  image_size?: { width: number; height: number };
+  scores?: FaceScore[]; // 계산된 점수들
+};
+
+// 사진을 보내 진짜 점수(비대칭/좌우 균형)를 받는 함수입니다.
+// 사진을 파일로 만드는 방식은 위 sendImageForLandmarks와 동일합니다.
+export async function analyzeFaceScores(uri: string): Promise<AnalyzeResult> {
+  const formData = new FormData();
+
+  if (Platform.OS === 'web') {
+    const res = await fetch(uri);
+    const blob = await res.blob();
+    formData.append('file', blob, 'photo.jpg');
+  } else {
+    formData.append('file', {
+      uri,
+      name: 'photo.jpg',
+      type: 'image/jpeg',
+    } as any);
+  }
+
+  const response = await fetch(`${BACKEND_URL}/scan/analyze`, {
+    method: 'POST',
+    body: formData,
+  });
+  return response.json();
 }

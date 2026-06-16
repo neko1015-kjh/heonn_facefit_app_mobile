@@ -1,4 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import {
   Image,
@@ -9,26 +10,70 @@ import {
   Text,
   View,
 } from 'react-native';
+import { analyzeFaceScores, FaceScore } from '../api';
 import { colors, radius } from '../theme';
 
 // [6] AI 변화 리포트 화면입니다.
-// 사용 전/후(Before & After) 비교 슬라이더와 CNN 점수 분석을 보여줍니다.
+// 사용 전/후(Before & After) 비교 슬라이더와 실제 얼굴 점수 분석을 보여줍니다.
 const TABS = ['주간', '월간', '누적'];
 
 // 비교에 쓰는 얼굴 이미지 (프로토타입용 샘플 이미지)
 const FACE_IMAGE =
   'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=600&q=80';
 
-// 점수 카드에 들어갈 데이터
-const SCORES = [
-  { label: '안면 비대칭 개선도', delta: '5%', score: 82 },
-  { label: '피부 탄력 및 부기', delta: '12%', score: 88 },
+// 아직 분석 전일 때 보여줄 예시 점수입니다.
+const SAMPLE_SCORES = [
+  { label: '안면 비대칭 개선도', value: 82 },
+  { label: '좌우 균형 (부기)', value: 88 },
 ];
+
+// 분석 상태: idle(대기) → analyzing(분석 중) → done(완료) → error(오류)
+type AnalyzeStatus = 'idle' | 'analyzing' | 'done' | 'error';
 
 export default function ReportScreen() {
   const [activeTab, setActiveTab] = useState(0); // 선택된 기간 탭
   const [sliderPos, setSliderPos] = useState(50); // 슬라이더 위치(%) 0~100
   const [boxWidth, setBoxWidth] = useState(0); // 비교 영역의 실제 가로 길이
+
+  // 실제 점수 분석 관련 상태
+  const [status, setStatus] = useState<AnalyzeStatus>('idle');
+  const [realScores, setRealScores] = useState<FaceScore[] | null>(null);
+  const [analyzeMsg, setAnalyzeMsg] = useState('');
+
+  // "내 사진으로 점수 분석" 버튼을 눌렀을 때
+  async function handlePickAndAnalyze() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setStatus('error');
+      setAnalyzeMsg('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
+      return;
+    }
+
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+    });
+    if (picked.canceled) return;
+
+    setStatus('analyzing');
+    setRealScores(null);
+    setAnalyzeMsg('');
+
+    try {
+      const data = await analyzeFaceScores(picked.assets[0].uri);
+      if (data.detected && data.scores) {
+        setRealScores(data.scores);
+        setStatus('done');
+      } else {
+        setStatus('error');
+        setAnalyzeMsg(data.message || '얼굴을 분석하지 못했습니다.');
+      }
+    } catch (e) {
+      console.log('점수 분석 실패:', e);
+      setStatus('error');
+      setAnalyzeMsg('백엔드 서버에 연결하지 못했습니다. 서버가 켜져 있는지 확인해 주세요.');
+    }
+  }
 
   // 비교 영역의 가로 길이를 측정합니다(드래그 위치 계산에 필요).
   function onBoxLayout(e: LayoutChangeEvent) {
@@ -105,25 +150,56 @@ export default function ReportScreen() {
         <Text style={styles.sliderHint}>← 좌우로 드래그해서 비교해 보세요 →</Text>
       </View>
 
-      {/* CNN 정량적 스코어 분석 */}
-      <Text style={styles.sectionTitle}>정량적 스코어 분석 (CNN)</Text>
+      {/* 정량적 스코어 분석 */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>정량적 스코어 분석</Text>
+        {/* 실제 분석 결과인지 예시인지 표시 */}
+        <Text style={styles.scoreBadge}>
+          {status === 'done' ? '내 사진 분석 결과' : '예시'}
+        </Text>
+      </View>
+
+      {/* 분석된 실제 점수가 있으면 그것을, 없으면 예시 점수를 보여줍니다. */}
       <View style={{ gap: 12 }}>
-        {SCORES.map((item) => (
+        {(realScores ?? SAMPLE_SCORES).map((item) => (
           <View key={item.label} style={styles.scoreCard}>
             <View style={styles.scoreRow}>
               <Text style={styles.scoreLabel}>{item.label}</Text>
-              <View style={styles.scoreRight}>
-                <Text style={styles.scoreDelta}>▲ {item.delta}</Text>
-                <Text style={styles.scoreValue}>{item.score}점</Text>
-              </View>
+              <Text style={styles.scoreValue}>{item.value}점</Text>
             </View>
             {/* 점수 막대 */}
             <View style={styles.scoreTrack}>
-              <View style={[styles.scoreFill, { width: `${item.score}%` }]} />
+              <View style={[styles.scoreFill, { width: `${item.value}%` }]} />
             </View>
           </View>
         ))}
       </View>
+
+      {/* 오류/안내 메시지 */}
+      {status === 'error' && (
+        <View style={styles.msgBox}>
+          <Feather name="alert-circle" size={16} color={colors.red} />
+          <Text style={styles.msgText}>{analyzeMsg}</Text>
+        </View>
+      )}
+
+      {/* 내 사진으로 실제 점수 분석 버튼 */}
+      <Pressable
+        style={[styles.analyzeButton, status === 'analyzing' && styles.analyzeButtonDisabled]}
+        onPress={handlePickAndAnalyze}
+        disabled={status === 'analyzing'}
+      >
+        <Feather
+          name={status === 'analyzing' ? 'activity' : 'camera'}
+          size={18}
+          color={status === 'analyzing' ? colors.textFaint : colors.bg}
+        />
+        <Text
+          style={[styles.analyzeButtonText, status === 'analyzing' && { color: colors.textFaint }]}
+        >
+          {status === 'analyzing' ? '분석 중...' : '내 사진으로 점수 분석'}
+        </Text>
+      </Pressable>
 
       {/* 예측 시뮬레이션 버튼 */}
       <Pressable style={styles.simButton}>
@@ -256,11 +332,61 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 8,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   sectionTitle: {
     color: colors.text,
     fontWeight: '500',
     fontSize: 15,
-    marginBottom: 12,
+  },
+  scoreBadge: {
+    color: colors.amber400,
+    fontSize: 11,
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: 'rgba(245,158,11,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  msgBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.3)',
+  },
+  msgText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    flex: 1,
+  },
+  analyzeButton: {
+    marginTop: 16,
+    paddingVertical: 16,
+    backgroundColor: colors.text,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  analyzeButtonDisabled: {
+    backgroundColor: colors.surface2,
+  },
+  analyzeButtonText: {
+    color: colors.bg,
+    fontWeight: '500',
+    fontSize: 15,
   },
   scoreCard: {
     backgroundColor: colors.surface,
