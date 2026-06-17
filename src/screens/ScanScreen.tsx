@@ -109,7 +109,9 @@ export default function ScanScreen() {
     setStatus('analyzing');
 
     try {
-      const data = await saveScan(uri);
+      // 분석 로딩을 최소 3초간 보여줍니다(서버 응답이 빨라도 사진 영역에 분석 상태 유지).
+      const minDelay = new Promise((resolve) => setTimeout(resolve, 3000));
+      const [data] = await Promise.all([saveScan(uri), minDelay]);
       if (data.detected && data.record) {
         setScores(data.record.scores);
         setLandmarks(data.landmarks ?? null);
@@ -195,7 +197,7 @@ export default function ScanScreen() {
                 <Animated.View
                   style={[styles.scanLine, { transform: [{ translateY: lineTranslate }] }]}
                 />
-                <Text style={styles.scanningText}>얼굴 특징점 분석 중...</Text>
+                <Text style={styles.scanningText}>분석 중입니다…</Text>
               </View>
             )}
           </View>
