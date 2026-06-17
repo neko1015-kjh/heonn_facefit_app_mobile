@@ -123,8 +123,8 @@ async function buildImageFormData(uri: string): Promise<FormData> {
   return formData;
 }
 
-// 얼굴 점 하나의 화면 좌표(0~1 비율)입니다.
-export type LandmarkPoint = { x: number; y: number };
+// 얼굴 점 하나의 좌표입니다. x, y는 0~1 비율, z는 상대 깊이(간이 3D 표시용).
+export type LandmarkPoint = { x: number; y: number; z?: number };
 
 // 사진을 분석하고 그 결과를 이력으로 저장하는 함수입니다.
 export async function saveScan(

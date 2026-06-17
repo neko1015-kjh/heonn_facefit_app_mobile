@@ -9,6 +9,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import Text from '../components/AppText';
 import { BACKEND_URL, getHistory, FaceScore, ScanRecord } from '../api';
 import { colors, radius } from '../theme';
@@ -106,25 +107,33 @@ export default function ReportScreen() {
     setSliderPos(percent);
   }
 
-  // ── 동일인 판별 & 비교 대상 정리 ──────────────────────────────
-  const firstRec = records[0] ?? null; // 가장 최신
-  const lastRec = records.length > 0 ? records[records.length - 1] : null; // 가장 오래됨
-  // 최신 vs 가장 오래된 사진의 얼굴 거리 (다른 사람인지 판단)
-  const compareDist = records.length >= 2 ? sigDist(firstRec?.signature, lastRec?.signature) : null;
+  // ── 기간 필터 (주간 7일 / 월간 30일 / 누적 전체) ──────────────
+  const periodRecords = records.filter((r) => {
+    if (activeTab === 2) return true; // 누적: 전체
+    const days = activeTab === 0 ? 7 : 30; // 주간 / 월간
+    const t = new Date(r.created_at).getTime();
+    return Date.now() - t <= days * 24 * 60 * 60 * 1000;
+  });
+
+  // ── 동일인 판별 & 비교 대상 정리 (선택한 기간 안에서) ───────────
+  const firstRec = periodRecords[0] ?? null; // 기간 내 가장 최신
+  const lastRec = periodRecords.length > 0 ? periodRecords[periodRecords.length - 1] : null; // 기간 내 가장 오래됨
+  const compareDist =
+    periodRecords.length >= 2 ? sigDist(firstRec?.signature, lastRec?.signature) : null;
   const differentPerson = compareDist != null && compareDist > SIG_THRESHOLD;
 
   // 다른 사람인데 기준을 선택했으면, 기준 얼굴과 같은 사람의 기록만 추립니다.
-  let working = records;
+  let working = periodRecords;
   if (differentPerson && baseline) {
     const ref = baseline === 'latest' ? firstRec?.signature : lastRec?.signature;
-    working = records.filter((r) => {
+    working = periodRecords.filter((r) => {
       const d = sigDist(r.signature, ref);
       return d == null || d <= SIG_THRESHOLD;
     });
   }
 
   const blocked = differentPerson && !baseline; // 다른 사람 → 기준 선택 대기(분석 불가)
-  const empty = records.length === 0;
+  const empty = periodRecords.length === 0; // 이 기간에 기록 없음
   const needMore = !blocked && !empty && working.length < 2; // 비교할 사진 부족
 
   // 비교 대상(추려진 기록 기준)
@@ -141,6 +150,17 @@ export default function ReportScreen() {
   // 비교 영역 높이: 사진 비율에 맞춰 잡되, 너무 길어지지 않게 제한합니다.
   const boxHeight =
     imgRatio && boxWidth > 0 ? Math.min(Math.round(boxWidth * imgRatio), 440) : 300;
+
+  // 기간 내 평균 점수 (요약용)
+  const avgOf = (key: string) =>
+    working.length
+      ? Math.round(
+          working.reduce((s, r) => s + (r.scores.find((x) => x.key === key)?.value ?? 0), 0) /
+            working.length
+        )
+      : 0;
+  const avgBalance = avgOf('balance');
+  const avgSymmetry = avgOf('symmetry');
 
   return (
     <>
@@ -281,7 +301,9 @@ export default function ReportScreen() {
             <View style={styles.placeholderBox}>
               <Feather name="image" size={36} color={colors.textFainter} />
               <Text style={styles.placeholderText}>
-                아직 저장된 기록이 없어요.{'\n'}아래 버튼으로 첫 사진을 분석해 보세요.
+                {records.length === 0
+                  ? '아직 저장된 기록이 없어요.\n아래 버튼으로 첫 사진을 분석해 보세요.'
+                  : `이 기간(${TABS[activeTab]})에는 기록이 없어요.\n‘누적’ 탭을 보거나 새로 분석해 보세요.`}
               </Text>
             </View>
           )}
@@ -301,7 +323,7 @@ export default function ReportScreen() {
         {newest ? (
           // 누르면 그동안의 기록을 팝업으로 보여줍니다.
           <Pressable style={styles.scoreBadgeBtn} onPress={() => setHistoryOpen(true)}>
-            <Text style={styles.scoreBadgeText}>총 {records.length}회 기록</Text>
+            <Text style={styles.scoreBadgeText}>{TABS[activeTab]} {periodRecords.length}회</Text>
             <Feather name="chevron-right" size={13} color={colors.amber400} />
           </Pressable>
         ) : (
@@ -336,6 +358,69 @@ export default function ReportScreen() {
           );
         })}
       </View>
+      )}
+
+      {/* 점수 추이 차트 + 요약 (정상 비교 가능할 때) */}
+      {showReport && (
+        <View style={styles.trendCard}>
+          <Text style={styles.trendTitle}>{TABS[activeTab]} 점수 추이</Text>
+          {(() => {
+            const series = working.slice().reverse(); // 오래된 → 최신
+            const n = series.length;
+            const W = boxWidth > 0 ? boxWidth : 300;
+            const H = 130;
+            const padL = 8, padR = 8, padT = 14, padB = 14;
+            const innerW = W - padL - padR;
+            const innerH = H - padT - padB;
+            const xAt = (i: number) => padL + (n <= 1 ? innerW / 2 : (i * innerW) / (n - 1));
+            const yAt = (v: number) => padT + (1 - v / 100) * innerH;
+            const valOf = (r: ScanRecord, key: string) =>
+              r.scores.find((s) => s.key === key)?.value ?? 0;
+            const balPts = series.map((r, i) => `${xAt(i)},${yAt(valOf(r, 'balance'))}`).join(' ');
+            const symPts = series.map((r, i) => `${xAt(i)},${yAt(valOf(r, 'symmetry'))}`).join(' ');
+            return (
+              <Svg width={W} height={H}>
+                {[0, 50, 100].map((g) => (
+                  <Line key={g} x1={padL} y1={yAt(g)} x2={W - padR} y2={yAt(g)} stroke={colors.border} strokeWidth={1} />
+                ))}
+                <Polyline points={balPts} fill="none" stroke={colors.amber400} strokeWidth={2} />
+                {series.map((r, i) => (
+                  <Circle key={`b${i}`} cx={xAt(i)} cy={yAt(valOf(r, 'balance'))} r={2.5} fill={colors.amber400} />
+                ))}
+                <Polyline points={symPts} fill="none" stroke={colors.emerald} strokeWidth={2} />
+                {series.map((r, i) => (
+                  <Circle key={`s${i}`} cx={xAt(i)} cy={yAt(valOf(r, 'symmetry'))} r={2.5} fill={colors.emerald} />
+                ))}
+              </Svg>
+            );
+          })()}
+          {/* 범례 */}
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.amber400 }]} />
+              <Text style={styles.legendText}>좌우 균형</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.emerald }]} />
+              <Text style={styles.legendText}>안면 비대칭</Text>
+            </View>
+          </View>
+          {/* 요약 */}
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNum}>{working.length}</Text>
+              <Text style={styles.summaryLabel}>분석 횟수</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNum}>{avgBalance}</Text>
+              <Text style={styles.summaryLabel}>평균 균형</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNum}>{avgSymmetry}</Text>
+              <Text style={styles.summaryLabel}>평균 비대칭</Text>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* 안내: 기록은 AI 스캔에서 만들어집니다 */}
@@ -1038,6 +1123,39 @@ const styles = StyleSheet.create({
     backgroundColor: colors.amber500,
     borderRadius: radius.full,
   },
+  // 점수 추이 차트 카드
+  trendCard: {
+    marginTop: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+  },
+  trendTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 8,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { color: colors.textMuted, fontSize: 12 },
+  summaryRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingTop: 14,
+  },
+  summaryItem: { flex: 1, alignItems: 'center' },
+  summaryNum: { color: colors.amber400, fontSize: 20, fontWeight: '700' },
+  summaryLabel: { color: colors.textFaint, fontSize: 12, marginTop: 2 },
   guideNote: {
     color: colors.textFaint,
     fontSize: 13,

@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import Text from '../components/AppText';
+import Face3DViewer from '../components/Face3DViewer';
 import { saveScan, FaceScore, LandmarkPoint } from '../api';
 import { colors, radius } from '../theme';
 
@@ -45,6 +46,7 @@ export default function ScanScreen() {
   const [showGuasha, setShowGuasha] = useState(false); // 괄사 추천 팝업 열림 여부
   const [galleryWidth, setGalleryWidth] = useState(280); // 이미지 갤러리 한 장 너비
   const [matching, setMatching] = useState(false); // "추천 상품 매칭 중" 로딩 표시 여부
+  const [show3D, setShow3D] = useState(false); // 3D 점구름 뷰어 팝업
 
   // 스캔 라인 위치 애니메이션 값
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -224,6 +226,12 @@ export default function ScanScreen() {
                 </View>
               ))}
             </View>
+            {landmarks && landmarks.length > 0 && (
+              <Pressable style={styles.view3dButton} onPress={() => setShow3D(true)}>
+                <Feather name="box" size={16} color={colors.amber400} />
+                <Text style={styles.view3dButtonText}>3D로 보기</Text>
+              </Pressable>
+            )}
             <Text style={styles.hintText}>리포트·마이 탭에서 변화와 추천을 확인하세요.</Text>
           </View>
         )}
@@ -274,6 +282,25 @@ export default function ScanScreen() {
           </View>
         )}
       </View>
+
+      {/* 3D 안면 점구름 뷰어 */}
+      <Modal visible={show3D} transparent animationType="fade" onRequestClose={() => setShow3D(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShow3D(false)}>
+          <Pressable style={styles.view3dCard} onPress={() => {}}>
+            <View style={styles.view3dHeader}>
+              <View style={styles.view3dTitleRow}>
+                <Feather name="box" size={18} color={colors.amber400} />
+                <Text style={styles.view3dTitle}>3D 안면 스캔</Text>
+              </View>
+              <Pressable onPress={() => setShow3D(false)} hitSlop={10}>
+                <Feather name="x" size={22} color={colors.textMuted} />
+              </Pressable>
+            </View>
+            {landmarks && <Face3DViewer points={landmarks} />}
+            <Text style={styles.view3dSub}>검출된 {landmarks?.length ?? 0}개 점을 3D로 표현했어요</Text>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* 추천 상품 매칭 중 로딩 (5초) */}
       <Modal visible={matching} transparent animationType="fade">
@@ -522,6 +549,44 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textAlign: 'center',
   },
+  view3dButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.amber500,
+    backgroundColor: 'rgba(245,158,11,0.1)',
+  },
+  view3dButtonText: {
+    color: colors.amber400,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  view3dCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    padding: 16,
+    alignItems: 'center',
+  },
+  view3dHeader: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  view3dTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  view3dTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  view3dSub: { color: colors.textFaint, fontSize: 12, marginTop: 10 },
   footer: {
     paddingHorizontal: 24,
     paddingTop: 12,
