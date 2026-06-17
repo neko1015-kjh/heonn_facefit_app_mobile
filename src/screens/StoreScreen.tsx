@@ -1,9 +1,14 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { ComponentProps, useEffect, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Svg, { Circle, Line, Rect } from 'react-native-svg';
 import Text from '../components/AppText';
 import { getRecommendations, RecommendationResult } from '../api';
 import { colors, radius } from '../theme';
+
+// 세척 주기 설정: 10회 사용마다 세척 권장 (예시 데이터)
+const CLEAN_THRESHOLD = 10;
+const CLEAN_USE_COUNT = 10; // 현재까지 세척 후 사용 횟수(예시)
 
 // [7] 스토어 / 마이페이지 화면입니다.
 // 최신 얼굴 분석(부기·피부톤)에 맞춘 추천 제품과 내 기기 정보·관리를 보여줍니다.
@@ -20,6 +25,75 @@ const DEVICE_INFO = [
   { label: '보증 기간', value: '~2027.05' },
 ];
 
+// 올바른 보관 가이드 카드 (괄사·뷰티 도구 보관법 참고하여 방짜유기 디바이스에 맞게 작성)
+type FeatherName = ComponentProps<typeof Feather>['name'];
+const STORAGE_GUIDE: { icon: FeatherName; title: string; body: string }[] = [
+  {
+    icon: 'droplet',
+    title: '사용 후 바로 세척',
+    body: '사용 직후 부드러운 극세사 천으로 접촉면을 닦아 피지·잔여물을 제거하세요. 깊은 세척은 미지근한 물과 순한 비누로 가볍게 하고 헹굽니다.',
+  },
+  {
+    icon: 'wind',
+    title: '완전히 건조하기',
+    body: '방짜유기는 습기에 닿으면 변색·부식될 수 있어요. 보관 전 마른 천으로 물기를 완전히 닦아 충분히 말려 주세요.',
+  },
+  {
+    icon: 'home',
+    title: '서늘하고 건조한 곳',
+    body: '직사광선·고온·습기를 피해 서늘하고 건조한 곳에 보관하세요. 세균이 많은 욕실 보관은 피하는 것이 좋습니다.',
+  },
+  {
+    icon: 'package',
+    title: '전용 파우치·케이스 사용',
+    body: '부드러운 천 케이스나 파우치에 넣어 흠집과 충격으로부터 보호하세요. 떨어뜨리면 손상될 수 있으니 조심히 다뤄 주세요.',
+  },
+  {
+    icon: 'battery-charging',
+    title: '전원·배터리 관리',
+    body: '사용 후에는 전원을 끄고, 오래 보관할 때는 적정 수준으로 충전해 두세요. 온열 접촉면은 깨끗이 닦은 뒤 보관합니다.',
+  },
+  {
+    icon: 'refresh-cw',
+    title: '정기 점검·소독',
+    body: '약 5회 사용마다 세척하고, 주기적으로 마른 천으로 광택을 관리하세요. 위생적으로 오래 사용할 수 있어요.',
+  },
+];
+
+// 올바른 세척 방법 가이드 카드 (괄사 세척법 참고하여 방짜유기 전자 디바이스에 맞게 작성)
+const CLEANING_GUIDE: { icon: FeatherName; title: string; body: string }[] = [
+  {
+    icon: 'power',
+    title: '전원 끄고 식히기',
+    body: '사용 직후 전원을 끄고, 온열 접촉면이 충분히 식을 때까지 기다린 뒤 세척을 시작하세요.',
+  },
+  {
+    icon: 'wind',
+    title: '부드러운 천으로 닦기',
+    body: '극세사 천으로 접촉면의 피지·오일·잔여물을 먼저 부드럽게 닦아냅니다.',
+  },
+  {
+    icon: 'droplet',
+    title: '순한 비누로 가볍게',
+    body: '미지근한 물에 순한 비누를 묻혀 접촉면만 살살 닦아 주세요. 세게 문지르지 않습니다.',
+  },
+  {
+    icon: 'check-circle',
+    title: '헹구고 물기 제거',
+    body: '깨끗한 물로 비누기를 헹군 뒤, 마른 천으로 물기를 꼼꼼히 닦아냅니다.',
+  },
+  {
+    icon: 'sun',
+    title: '완전히 건조 후 보관',
+    body: '통풍이 잘 되는 곳에서 완전히 말린 뒤 보관하세요. 방짜유기는 습기에 변색될 수 있어요.',
+  },
+  {
+    icon: 'shield',
+    title: '주기적 소독',
+    body: '주 1회 정도 알코올 솜으로 접촉면을 닦아 위생적으로 소독해 주세요.',
+  },
+];
+
 // 기기 사용 기록 (예시 데이터 — 추후 실제 기기 연동 시 교체)
 const USAGE_HISTORY = [
   { date: '2025.08.28', duration: '15분', area: '오른쪽 턱선(교근)', temp: '38°C', mode: '탄력 UP' },
@@ -32,6 +106,9 @@ const USAGE_HISTORY = [
 export default function StoreScreen() {
   const [rec, setRec] = useState<RecommendationResult | null>(null);
   const [usageOpen, setUsageOpen] = useState(false); // 사용 기록 팝업 열림 여부
+  const [storageOpen, setStorageOpen] = useState(false); // 보관 가이드 팝업 열림 여부
+  const [cleaningOpen, setCleaningOpen] = useState(false); // 세척 방법 가이드 팝업 열림 여부
+  const needClean = CLEAN_USE_COUNT >= CLEAN_THRESHOLD; // 세척 필요 여부
 
   // 화면이 열릴 때 최신 분석 기반 추천을 불러옵니다.
   useEffect(() => {
@@ -135,15 +212,25 @@ export default function StoreScreen() {
 
         {/* 알림/사용시간/가이드 목록 */}
         <View style={styles.listSection}>
-          <View style={styles.listRow}>
+          <Pressable style={styles.listRow} onPress={() => setCleaningOpen(true)}>
             <View style={[styles.listIcon, { backgroundColor: 'rgba(245,158,11,0.2)' }]}>
               <Feather name="bell" size={18} color={colors.amber500} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.listTitle}>세척 알림</Text>
-              <Text style={styles.listDesc}>5회 사용 후 방짜유기 세척이 필요해요</Text>
+              <View style={styles.cleanTitleRow}>
+                <Text style={styles.listTitle}>세척 알림</Text>
+                <Text style={styles.cleanCount}>
+                  사용 {CLEAN_USE_COUNT}/{CLEAN_THRESHOLD}회
+                </Text>
+              </View>
+              <Text style={[styles.listDesc, needClean && { color: colors.amber400 }]}>
+                {needClean
+                  ? `${CLEAN_THRESHOLD}회 사용했어요. 지금 세척해 주세요! (방법 보기)`
+                  : `${CLEAN_THRESHOLD}회 사용 시 방짜유기 세척이 필요해요`}
+              </Text>
             </View>
-          </View>
+            <Feather name="chevron-right" size={16} color={colors.textFainter} />
+          </Pressable>
 
           <Pressable style={styles.listRow} onPress={() => setUsageOpen(true)}>
             <View style={styles.listIcon}>
@@ -161,9 +248,12 @@ export default function StoreScreen() {
             </View>
           </Pressable>
 
-          <Pressable style={[styles.listRow, { borderBottomWidth: 0 }]}>
+          <Pressable
+            style={[styles.listRow, { borderBottomWidth: 0 }]}
+            onPress={() => setStorageOpen(true)}
+          >
             <View style={styles.listIcon}>
-              <Feather name="play" size={18} color={colors.textMuted} />
+              <Feather name="book-open" size={18} color={colors.textMuted} />
             </View>
             <Text style={[styles.listTitle, { flex: 1 }]}>올바른 보관 가이드 보기</Text>
             <Feather name="chevron-right" size={16} color={colors.textFainter} />
@@ -220,6 +310,112 @@ export default function StoreScreen() {
                 </View>
               </View>
             ))}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+
+    {/* 올바른 보관 가이드 팝업 (카드 상하 스크롤) */}
+    <Modal
+      visible={storageOpen}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setStorageOpen(false)}
+    >
+      <Pressable style={styles.modalOverlay} onPress={() => setStorageOpen(false)}>
+        <Pressable style={styles.guideCard} onPress={() => {}}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>올바른 보관 가이드</Text>
+              <Text style={styles.modalSub}>방짜유기 괄사 디바이스를 오래 쓰는 법</Text>
+            </View>
+            <Pressable onPress={() => setStorageOpen(false)} hitSlop={10}>
+              <Feather name="x" size={22} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.guideList} showsVerticalScrollIndicator={false}>
+            {STORAGE_GUIDE.map((g, idx) => (
+              <View key={idx} style={styles.guideItem}>
+                <View style={styles.guideIcon}>
+                  <Feather name={g.icon} size={20} color={colors.amber400} />
+                </View>
+                <View style={styles.guideTextWrap}>
+                  <Text style={styles.guideStepTitle}>
+                    {idx + 1}. {g.title}
+                  </Text>
+                  <Text style={styles.guideStepBody}>{g.body}</Text>
+                </View>
+              </View>
+            ))}
+            <Text style={styles.guideFooter}>
+              ※ 일반적인 괄사·뷰티 도구 보관법을 참고해 정리했어요.
+            </Text>
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+
+    {/* 올바른 세척 방법 가이드 팝업 (카드 상하 스크롤 + 일러스트) */}
+    <Modal
+      visible={cleaningOpen}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setCleaningOpen(false)}
+    >
+      <Pressable style={styles.modalOverlay} onPress={() => setCleaningOpen(false)}>
+        <Pressable style={styles.guideCard} onPress={() => {}}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>올바른 세척 방법</Text>
+              <Text style={styles.modalSub}>방짜유기 괄사 디바이스를 위생적으로</Text>
+            </View>
+            <Pressable onPress={() => setCleaningOpen(false)} hitSlop={10}>
+              <Feather name="x" size={22} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.guideList} showsVerticalScrollIndicator={false}>
+            {/* 직접 그린 일러스트 (디바이스 + 물방울 + 반짝임) */}
+            <View style={styles.cleanIllust}>
+              <Svg width={200} height={96}>
+                {/* 디바이스 본체 */}
+                <Rect x={66} y={20} width={68} height={56} rx={16} fill={colors.surface2} stroke={colors.amber500} strokeWidth={2} />
+                {/* 접촉면 하이라이트 */}
+                <Rect x={74} y={28} width={52} height={18} rx={9} fill="rgba(245,158,11,0.25)" />
+                {/* 물방울 */}
+                <Circle cx={40} cy={40} r={7} fill={colors.amber400} opacity={0.8} />
+                <Circle cx={52} cy={62} r={5} fill={colors.amber400} opacity={0.6} />
+                <Circle cx={160} cy={46} r={7} fill={colors.amber400} opacity={0.8} />
+                <Circle cx={150} cy={66} r={5} fill={colors.amber400} opacity={0.6} />
+                {/* 반짝임 */}
+                <Line x1={150} y1={18} x2={150} y2={30} stroke={colors.amber300} strokeWidth={2} />
+                <Line x1={144} y1={24} x2={156} y2={24} stroke={colors.amber300} strokeWidth={2} />
+              </Svg>
+            </View>
+
+            {CLEANING_GUIDE.map((g, idx) => (
+              <View key={idx} style={styles.guideItem}>
+                <View style={styles.guideIcon}>
+                  <Feather name={g.icon} size={20} color={colors.amber400} />
+                </View>
+                <View style={styles.guideTextWrap}>
+                  <Text style={styles.guideStepTitle}>
+                    {idx + 1}. {g.title}
+                  </Text>
+                  <Text style={styles.guideStepBody}>{g.body}</Text>
+                </View>
+              </View>
+            ))}
+
+            {/* 주의 */}
+            <View style={styles.cleanCaution}>
+              <Feather name="alert-triangle" size={16} color={colors.red} />
+              <Text style={styles.cleanCautionText}>
+                충전 단자·전자 부품은 물에 담그지 마세요. 접촉면만 세척합니다.
+              </Text>
+            </View>
+            <Text style={styles.guideFooter}>※ 일반적인 괄사 세척법을 참고해 정리했어요.</Text>
           </ScrollView>
         </Pressable>
       </Pressable>
@@ -494,6 +690,92 @@ const styles = StyleSheet.create({
     color: colors.textFaint,
     fontSize: 12,
     marginTop: 2,
+  },
+  // 보관 가이드 팝업
+  guideCard: {
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '82%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    padding: 16,
+  },
+  guideList: {
+    flexGrow: 0,
+    marginTop: 4,
+  },
+  guideItem: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.lg,
+    padding: 14,
+    marginBottom: 10,
+  },
+  guideIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  guideTextWrap: { flex: 1 },
+  guideStepTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  guideStepBody: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  guideFooter: {
+    color: colors.textFainter,
+    fontSize: 11,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  cleanTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cleanCount: {
+    color: colors.amber400,
+    fontSize: 11,
+    fontWeight: '700',
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  cleanIllust: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  cleanCaution: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.3)',
+    borderRadius: radius.md,
+    padding: 12,
+    marginTop: 4,
+  },
+  cleanCautionText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 17,
   },
   modalList: {
     flexGrow: 0,
