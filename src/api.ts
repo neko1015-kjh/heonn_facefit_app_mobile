@@ -107,6 +107,7 @@ export type ScanRecord = {
   image_url: string; // 사진 주소(서버 기준 상대 경로). 전체 주소는 BACKEND_URL을 앞에 붙입니다.
   scores: FaceScore[]; // 그때의 점수들
   care_side?: string; // 케어가 더 필요한 쪽('오른쪽'/'왼쪽')
+  signature?: number[]; // 동일인 판별용 얼굴 서명(특징 벡터)
 };
 
 // 사진을 보내 파일 데이터를 FormData에 담는 공통 처리입니다.

@@ -50,6 +50,20 @@ function predictScores(scores: FaceScore[]) {
   });
 }
 
+// 같은 사람으로 볼 수 있는 얼굴 서명 거리 한계값. (이보다 크면 다른 사람으로 판단)
+const SIG_THRESHOLD = 0.2;
+
+// 두 얼굴 서명 사이의 거리. 비교할 수 없으면(서명 없음) null.
+function sigDist(a?: number[], b?: number[]): number | null {
+  if (!a || !b || a.length === 0 || b.length === 0 || a.length !== b.length) return null;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i] - b[i];
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
 export default function ReportScreen() {
   const [activeTab, setActiveTab] = useState(0);
   const [sliderPos, setSliderPos] = useState(50);
@@ -60,6 +74,7 @@ export default function ReportScreen() {
   const [historyOpen, setHistoryOpen] = useState(false); // 기록 팝업 열림 여부
   const [simOpen, setSimOpen] = useState(false); // 예상 시뮬레이션 팝업 열림 여부
   const [imgRatio, setImgRatio] = useState<number | null>(null); // 사진 세로/가로 비율
+  const [baseline, setBaseline] = useState<'latest' | 'previous' | null>(null); // 다른 사람일 때 기준 선택
 
   // 화면이 열릴 때마다 이력을 불러옵니다.
   useEffect(() => {
@@ -91,11 +106,33 @@ export default function ReportScreen() {
     setSliderPos(percent);
   }
 
-  // 최신 기록과 가장 오래된 기록 (Before/After 비교용)
-  const newest = records[0] ?? null;
-  const oldest = records.length > 0 ? records[records.length - 1] : null;
-  const previous = records[1] ?? null; // 직전 기록(변화 계산용)
-  const hasTwo = records.length >= 2;
+  // ── 동일인 판별 & 비교 대상 정리 ──────────────────────────────
+  const firstRec = records[0] ?? null; // 가장 최신
+  const lastRec = records.length > 0 ? records[records.length - 1] : null; // 가장 오래됨
+  // 최신 vs 가장 오래된 사진의 얼굴 거리 (다른 사람인지 판단)
+  const compareDist = records.length >= 2 ? sigDist(firstRec?.signature, lastRec?.signature) : null;
+  const differentPerson = compareDist != null && compareDist > SIG_THRESHOLD;
+
+  // 다른 사람인데 기준을 선택했으면, 기준 얼굴과 같은 사람의 기록만 추립니다.
+  let working = records;
+  if (differentPerson && baseline) {
+    const ref = baseline === 'latest' ? firstRec?.signature : lastRec?.signature;
+    working = records.filter((r) => {
+      const d = sigDist(r.signature, ref);
+      return d == null || d <= SIG_THRESHOLD;
+    });
+  }
+
+  const blocked = differentPerson && !baseline; // 다른 사람 → 기준 선택 대기(분석 불가)
+  const empty = records.length === 0;
+  const needMore = !blocked && !empty && working.length < 2; // 비교할 사진 부족
+
+  // 비교 대상(추려진 기록 기준)
+  const newest = working[0] ?? null;
+  const oldest = working.length > 0 ? working[working.length - 1] : null;
+  const previous = working[1] ?? null;
+  const hasTwo = working.length >= 2 && !blocked;
+  const showReport = !blocked && !empty && !needMore; // 정상 비교 가능
 
   // 비교에 쓸 사진 주소 (저장된 실제 기록의 사진)
   const afterImage = newest ? fullImageUrl(newest.image_url) : '';
@@ -130,7 +167,59 @@ export default function ReportScreen() {
         })}
       </View>
 
-      {/* Before & After 비교 슬라이더 */}
+      {/* 예외: 최신/이전 얼굴이 다른 사람 → 기준 선택 */}
+      {blocked && (
+        <View style={styles.noticeCard}>
+          <Feather name="alert-triangle" size={24} color={colors.amber400} />
+          <Text style={styles.noticeTitle}>다른 얼굴이 감지됐어요</Text>
+          <Text style={styles.noticeBody}>
+            최신 사진과 이전 사진의 얼굴이 서로 달라(다른 사람으로 보여) 변화를 분석할 수 없어요.
+            어떤 얼굴을 기준으로 분석할까요?
+          </Text>
+          <View style={styles.choiceRow}>
+            <Pressable style={styles.choiceBtn} onPress={() => setBaseline('latest')}>
+              <Text style={styles.choiceBtnText}>최신 얼굴 기준</Text>
+            </Pressable>
+            <Pressable style={[styles.choiceBtn, styles.choiceBtnAlt]} onPress={() => setBaseline('previous')}>
+              <Text style={styles.choiceBtnAltText}>이전 얼굴 기준</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* 예외: 비교할 (같은 얼굴) 사진이 부족 */}
+      {needMore && (
+        <View style={styles.noticeCard}>
+          <Feather name="image" size={24} color={colors.textMuted} />
+          <Text style={styles.noticeTitle}>비교할 사진이 부족해요</Text>
+          <Text style={styles.noticeBody}>
+            {differentPerson
+              ? '선택한 기준 얼굴과 비교할 사진이 부족해요. 같은 얼굴 사진을 더 추가해 주세요.'
+              : '변화를 비교하려면 얼굴 사진이 2장 이상 필요해요. AI스캔에서 사진을 더 분석해 주세요.'}
+          </Text>
+          {differentPerson && (
+            <Pressable style={styles.noticeReset} onPress={() => setBaseline(null)}>
+              <Text style={styles.noticeResetText}>기준 다시 선택</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      {/* 기준 얼굴 표시 (다른 사람 상황에서 기준을 고른 경우) */}
+      {showReport && differentPerson && baseline && (
+        <View style={styles.baselineNote}>
+          <Feather name="user-check" size={14} color={colors.amber400} />
+          <Text style={styles.baselineNoteText}>
+            기준: {baseline === 'latest' ? '최신' : '이전'} 얼굴
+          </Text>
+          <Pressable onPress={() => setBaseline(null)} hitSlop={6}>
+            <Text style={styles.baselineChange}>변경</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Before & After 비교 슬라이더 (정상 비교 가능 또는 기록 없음일 때만) */}
+      {(showReport || empty) && (
       <View style={styles.sliderCard}>
         {/* 비교 영역은 항상 그려서 가로 길이를 측정합니다(Before 사진을 정확히 그리기 위해). */}
         <View
@@ -203,8 +292,10 @@ export default function ReportScreen() {
             : '기록이 2개 이상 쌓이면 변화를 비교할 수 있어요.'}
         </Text>
       </View>
+      )}
 
-      {/* 점수 분석 + 직전 대비 변화 */}
+      {/* 점수 분석 + 직전 대비 변화 (다른 사람 선택 대기 중이면 숨김) */}
+      {!blocked && (
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>정량적 스코어 분석</Text>
         {newest ? (
@@ -217,7 +308,9 @@ export default function ReportScreen() {
           <Text style={styles.scoreBadge}>예시</Text>
         )}
       </View>
+      )}
 
+      {!blocked && (
       <View style={{ gap: 12 }}>
         {(newest ? newest.scores : SAMPLE_SCORES).map((score) => {
           // 직전 기록에서 같은 항목의 점수를 찾아 변화량을 계산합니다.
@@ -243,6 +336,7 @@ export default function ReportScreen() {
           );
         })}
       </View>
+      )}
 
       {/* 안내: 기록은 AI 스캔에서 만들어집니다 */}
       <Text style={styles.guideNote}>
@@ -490,6 +584,88 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  // 예외 안내 카드 (다른 사람 / 사진 부족)
+  noticeCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    borderRadius: radius.lg,
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 24,
+  },
+  noticeTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  noticeBody: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+    width: '100%',
+  },
+  choiceBtn: {
+    flex: 1,
+    backgroundColor: colors.amber500,
+    paddingVertical: 13,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  choiceBtnText: {
+    color: colors.bg,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  choiceBtnAlt: {
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border2,
+  },
+  choiceBtnAltText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  noticeReset: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  noticeResetText: {
+    color: colors.amber400,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  baselineNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(245,158,11,0.1)',
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  baselineNoteText: {
+    color: colors.amber400,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  baselineChange: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
   beforeClip: {
     position: 'absolute',
