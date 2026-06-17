@@ -229,10 +229,10 @@ export default function ScanScreen() {
         )}
 
         {status === 'error' && (
-          <View style={styles.resultBox}>
+          <View style={[styles.resultBox, styles.resultBoxError]}>
             <View style={styles.resultRow}>
               <Feather name="alert-circle" size={18} color={colors.red} />
-              <Text style={styles.resultTitle}>분석하지 못했어요</Text>
+              <Text style={styles.resultTitle}>분석할 수 없어요</Text>
             </View>
             <Text style={styles.resultSub}>{message}</Text>
           </View>
@@ -471,6 +471,10 @@ const styles = StyleSheet.create({
     padding: 16,
     width: '100%',
     alignItems: 'center',
+  },
+  resultBoxError: {
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderColor: 'rgba(239,68,68,0.4)',
   },
   resultRow: {
     flexDirection: 'row',

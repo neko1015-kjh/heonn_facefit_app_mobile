@@ -1,8 +1,9 @@
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { addCareNotificationResponseListener } from './src/notify';
 import BottomNav, { TabKey } from './src/components/BottomNav';
 import { colors } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
@@ -24,6 +25,15 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('login');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [pairingState, setPairingState] = useState<PairingState>('searching');
+
+  // 시스템 알림을 눌렀을 때, 해당 화면(케어 탭)으로 이동합니다.
+  useEffect(() => {
+    const unsubscribe = addCareNotificationResponseListener(() => {
+      setAppState('main');
+      setActiveTab('care');
+    });
+    return unsubscribe;
+  }, []);
 
   // Pretendard 폰트 파일들을 불러옵니다. (다 불러오기 전까지는 빈 화면 표시)
   const [fontsLoaded] = useFonts({
