@@ -3,13 +3,11 @@
 
 import { Platform } from 'react-native';
 
-// 백엔드 서버 주소입니다.
-// FastAPI 서버는 보통 8000번 포트에서 실행되므로 기본값으로 둡니다.
+// 백엔드 서버 주소입니다. (FastAPI는 8000번 포트에서 실행)
 //
-// 참고:
-// - 웹 브라우저 미리보기(npm run web)에서는 아래 'localhost' 주소가 그대로 잘 동작합니다.
-// - 나중에 실제 휴대폰(Expo Go 앱)으로 테스트할 때는 'localhost' 대신
-//   컴퓨터의 IP 주소(예: http://192.168.0.10:8000)로 바꿔야 합니다.
+// 'localhost'를 사용합니다.
+// - PC 웹 브라우저(localhost:8081)에서 그대로 동작합니다.
+// - 안드로이드 USB(adb reverse) 연결 시에도 휴대폰이 localhost로 PC에 접근하므로 동일하게 동작합니다.
 export const BACKEND_URL = 'http://localhost:8000';
 
 // 백엔드 서버가 켜져 있고 정상적으로 응답하는지 확인하는 함수입니다.
@@ -108,6 +106,7 @@ export type ScanRecord = {
   created_at: string; // 분석한 시각
   image_url: string; // 사진 주소(서버 기준 상대 경로). 전체 주소는 BACKEND_URL을 앞에 붙입니다.
   scores: FaceScore[]; // 그때의 점수들
+  care_side?: string; // 케어가 더 필요한 쪽('오른쪽'/'왼쪽')
 };
 
 // 사진을 보내 파일 데이터를 FormData에 담는 공통 처리입니다.

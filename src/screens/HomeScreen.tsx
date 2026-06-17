@@ -1,6 +1,8 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Text from '../components/AppText';
+import { getHistory, ScanRecord } from '../api';
 import { colors, radius } from '../theme';
 import type { TabKey } from '../components/BottomNav';
 
@@ -11,7 +13,77 @@ type Props = {
   goTab: (tab: TabKey) => void;
 };
 
+// 기록에서 특정 점수 값을 꺼냅니다.
+function scoreOf(record: ScanRecord | undefined, key: string) {
+  return record?.scores.find((s) => s.key === key)?.value;
+}
+
+// "오늘의 안면 컨디션" 문구를 분석 기록에 맞춰 만들어 줍니다.
+function renderCondition(newest?: ScanRecord, previous?: ScanRecord) {
+  // 기록이 없을 때
+  if (!newest) {
+    return (
+      <Text style={styles.conditionTitle}>
+        AI 스캔으로 첫 얼굴 분석을{'\n'}시작해 보세요.
+      </Text>
+    );
+  }
+
+  const symN = scoreOf(newest, 'symmetry');
+  const balN = scoreOf(newest, 'balance');
+
+  // 첫 분석(비교할 직전 기록이 없을 때)
+  if (!previous) {
+    return (
+      <Text style={styles.conditionTitle}>
+        첫 분석 완료!{'\n'}
+        <Text style={{ color: colors.amber400 }}>
+          비대칭 {symN}점 · 균형 {balN}점
+        </Text>
+      </Text>
+    );
+  }
+
+  // 직전 기록과 좌우 균형(부기) 점수 비교
+  const balP = scoreOf(previous, 'balance') ?? balN ?? 0;
+  const delta = (balN ?? 0) - balP;
+
+  if (delta > 0) {
+    return (
+      <Text style={styles.conditionTitle}>
+        직전보다 좌우 균형이{'\n'}
+        <Text style={{ color: colors.emerald }}>{delta}점 좋아졌어요!</Text>
+      </Text>
+    );
+  }
+  if (delta < 0) {
+    return (
+      <Text style={styles.conditionTitle}>
+        직전보다 좌우 균형이{'\n'}
+        <Text style={{ color: colors.red }}>{Math.abs(delta)}점 낮아졌어요</Text>
+      </Text>
+    );
+  }
+  return (
+    <Text style={styles.conditionTitle}>
+      직전과 비슷한 상태를{'\n'}유지하고 있어요.
+    </Text>
+  );
+}
+
 export default function HomeScreen({ goTab }: Props) {
+  // 최신 분석 기록을 불러와 "오늘의 안면 컨디션"에 반영합니다.
+  const [records, setRecords] = useState<ScanRecord[]>([]);
+
+  useEffect(() => {
+    getHistory()
+      .then((d) => setRecords(d.records))
+      .catch((e) => console.log('이력 불러오기 실패:', e));
+  }, []);
+
+  const newest = records[0];
+  const previous = records[1];
+
   return (
     <ScrollView
       style={styles.container}
@@ -48,15 +120,14 @@ export default function HomeScreen({ goTab }: Props) {
         </View>
       </View>
 
-      {/* 오늘의 안면 컨디션 카드 */}
+      {/* 오늘의 안면 컨디션 카드 (실제 분석 기록 기반) */}
       <View style={styles.conditionCard}>
         <Text style={styles.conditionLabel}>오늘의 안면 컨디션</Text>
-        <Text style={styles.conditionTitle}>
-          어제보다 안면 부기가{'\n'}
-          <Text style={{ color: colors.amber400 }}>15% 감소</Text>했어요!
-        </Text>
-        <Pressable style={styles.conditionLink} onPress={() => goTab('report')}>
-          <Text style={styles.conditionLinkText}>상세 리포트 보기</Text>
+        {renderCondition(newest, previous)}
+        <Pressable style={styles.conditionLink} onPress={() => goTab(newest ? 'report' : 'scan')}>
+          <Text style={styles.conditionLinkText}>
+            {newest ? '상세 리포트 보기' : 'AI 스캔 시작하기'}
+          </Text>
           <Feather name="chevron-right" size={16} color={colors.amber400} />
         </Pressable>
       </View>

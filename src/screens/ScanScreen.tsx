@@ -1,10 +1,28 @@
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  Image,
+  LayoutChangeEvent,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import Text from '../components/AppText';
 import { saveScan, FaceScore, LandmarkPoint } from '../api';
 import { colors, radius } from '../theme';
+
+// 추천할 괄사 디바이스 이미지들 (assets/products 폴더의 실제 이미지)
+const GUASHA_IMAGES = [
+  require('../../assets/products/device1.jpg'),
+  require('../../assets/products/device2.png'),
+  require('../../assets/products/device3.jpg'),
+  require('../../assets/products/device4.png'),
+];
 
 // [4] AI 정밀 안면 스캔 화면입니다.
 // 사진을 고르면 백엔드로 보내 실제로 얼굴을 분석하고, 그 결과(점 478개·점수)를 기록으로 저장합니다.
@@ -24,9 +42,14 @@ export default function ScanScreen() {
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [scores, setScores] = useState<FaceScore[] | null>(null); // 계산된 점수
   const [message, setMessage] = useState(''); // 안내/오류 문구
+  const [showGuasha, setShowGuasha] = useState(false); // 괄사 추천 팝업 열림 여부
+  const [galleryWidth, setGalleryWidth] = useState(280); // 이미지 갤러리 한 장 너비
+  const [matching, setMatching] = useState(false); // "추천 상품 매칭 중" 로딩 표시 여부
 
   // 스캔 라인 위치 애니메이션 값
   const scanLine = useRef(new Animated.Value(0)).current;
+  // 추천 매칭 로딩 바 진행 애니메이션 값(0→1, 5초)
+  const matchAnim = useRef(new Animated.Value(0)).current;
 
   // 분석 중일 때 스캔 라인을 위아래로 반복 이동
   useEffect(() => {
@@ -53,18 +76,28 @@ export default function ScanScreen() {
   }, [status, scanLine]);
 
   // "사진 선택 후 분석" 버튼을 눌렀을 때
-  async function handlePickAndScan() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setStatus('error');
-      setMessage('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
-      return;
+  async function handlePickAndScan(fromCamera = false) {
+    // 카메라 촬영이면 카메라 권한을, 갤러리면 사진 접근 권한을 요청합니다.
+    if (fromCamera) {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setStatus('error');
+        setMessage('카메라 권한이 필요합니다. 설정에서 허용해 주세요.');
+        return;
+      }
+    } else {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setStatus('error');
+        setMessage('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
+        return;
+      }
     }
 
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
+    // 카메라로 촬영하거나 갤러리에서 사진을 고릅니다.
+    const picked = fromCamera
+      ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (picked.canceled) return;
 
     const uri = picked.assets[0].uri;
@@ -82,6 +115,19 @@ export default function ScanScreen() {
         setLandmarks(data.landmarks ?? null);
         setImageSize(data.image_size ?? null);
         setStatus('done');
+        // 분석 완료 → "추천 상품 매칭 중" 로딩 바를 5초간 보여준 뒤 추천 팝업 노출
+        setMatching(true);
+        matchAnim.setValue(0);
+        Animated.timing(matchAnim, {
+          toValue: 1,
+          duration: 5000,
+          useNativeDriver: false,
+        }).start(({ finished }) => {
+          if (finished) {
+            setMatching(false);
+            setShowGuasha(true);
+          }
+        });
       } else {
         setStatus('error');
         setMessage(data.message || '얼굴을 분석하지 못했습니다.');
@@ -191,25 +237,123 @@ export default function ScanScreen() {
         )}
       </View>
 
-      {/* 하단 버튼 */}
+      {/* 하단 버튼: 카메라 촬영 / 갤러리 선택 */}
       <View style={styles.footer}>
-        <Pressable
-          style={[styles.scanButton, isAnalyzing && styles.scanButtonDisabled]}
-          onPress={handlePickAndScan}
-          disabled={isAnalyzing}
-        >
-          <View style={styles.scanButtonInner}>
-            <Feather
-              name={isAnalyzing ? 'activity' : 'camera'}
-              size={20}
-              color={isAnalyzing ? colors.textFaint : colors.bg}
-            />
-            <Text style={[styles.scanButtonText, isAnalyzing && { color: colors.textFaint }]}>
-              {isAnalyzing ? '분석 중...' : status === 'idle' ? '사진 선택 후 분석' : '다른 사진으로 다시'}
-            </Text>
+        {isAnalyzing ? (
+          <View style={[styles.scanButton, styles.scanButtonDisabled]}>
+            <View style={styles.scanButtonInner}>
+              <Feather name="activity" size={20} color={colors.textFaint} />
+              <Text style={[styles.scanButtonText, { color: colors.textFaint }]}>분석 중...</Text>
+            </View>
           </View>
-        </Pressable>
+        ) : (
+          <View style={styles.footerRow}>
+            {/* 카메라로 촬영 */}
+            <Pressable
+              style={[styles.scanButton, styles.scanButtonFlex]}
+              onPress={() => handlePickAndScan(true)}
+            >
+              <View style={styles.scanButtonInner}>
+                <Feather name="camera" size={20} color={colors.bg} />
+                <Text style={styles.scanButtonText}>카메라 촬영</Text>
+              </View>
+            </Pressable>
+
+            {/* 갤러리에서 선택 */}
+            <Pressable
+              style={[styles.scanButtonOutline, styles.scanButtonFlex]}
+              onPress={() => handlePickAndScan(false)}
+            >
+              <View style={styles.scanButtonInner}>
+                <Feather name="image" size={20} color={colors.text} />
+                <Text style={styles.scanButtonOutlineText}>갤러리</Text>
+              </View>
+            </Pressable>
+          </View>
+        )}
       </View>
+
+      {/* 추천 상품 매칭 중 로딩 (5초) */}
+      <Modal visible={matching} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.matchCard}>
+            <Feather name="search" size={28} color={colors.amber400} />
+            <Text style={styles.matchText}>추천 상품을 매칭 중입니다…</Text>
+            {/* 진행 바 (5초간 0% → 100%) */}
+            <View style={styles.matchTrack}>
+              <Animated.View
+                style={[
+                  styles.matchFill,
+                  {
+                    width: matchAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0%', '100%'],
+                    }),
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 분석 완료 시 뜨는 괄사 디바이스 추천 팝업 */}
+      <Modal
+        visible={showGuasha}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGuasha(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowGuasha(false)}>
+          <Pressable style={styles.guashaCard} onPress={() => {}}>
+            {/* 헤더 */}
+            <View style={styles.guashaHeader}>
+              <View style={styles.guashaHeaderTitle}>
+                <Feather name="check-circle" size={18} color={colors.emerald} />
+                <Text style={styles.guashaTitle}>분석 완료! 맞춤 괄사 추천</Text>
+              </View>
+              <Pressable onPress={() => setShowGuasha(false)} hitSlop={10}>
+                <Feather name="x" size={22} color={colors.textMuted} />
+              </Pressable>
+            </View>
+
+            {/* 디바이스 이미지 갤러리 (좌우로 넘기기) */}
+            <View
+              style={styles.guashaGallery}
+              onLayout={(e: LayoutChangeEvent) => setGalleryWidth(e.nativeEvent.layout.width)}
+            >
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+              >
+                {GUASHA_IMAGES.map((img, i) => (
+                  <View key={i} style={{ width: galleryWidth }}>
+                    <Image source={img} style={styles.guashaImage} resizeMode="contain" />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+            <Text style={styles.guashaSwipeHint}>← 좌우로 넘겨 보세요 ({GUASHA_IMAGES.length}장) →</Text>
+
+            {/* 제품 정보 */}
+            <Text style={styles.guashaName}>HeOnn FaceFit 괄사 디바이스</Text>
+            <Text style={styles.guashaDesc}>온열 유기(방짜유기) 괄사로 부기·탄력을 케어하는 전용 디바이스</Text>
+            <Text style={styles.guashaReason}>
+              방금 분석한 부기·비대칭 결과에 맞춰 추천드려요.
+            </Text>
+
+            {/* 버튼 */}
+            <Pressable style={styles.guashaBuyBtn}>
+              <Feather name="shopping-bag" size={18} color={colors.bg} />
+              <Text style={styles.guashaBuyText}>구매하러 가기</Text>
+            </Pressable>
+            <Pressable style={styles.guashaLaterBtn} onPress={() => setShowGuasha(false)}>
+              <Text style={styles.guashaLaterText}>다음에 볼게요</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -376,6 +520,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 12,
   },
+  footerRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   scanButton: {
     width: '100%',
     paddingVertical: 16,
@@ -383,6 +531,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.text,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  scanButtonFlex: {
+    flex: 1,
+    width: undefined,
   },
   scanButtonDisabled: {
     backgroundColor: colors.surface2,
@@ -396,5 +548,140 @@ const styles = StyleSheet.create({
     color: colors.bg,
     fontWeight: '500',
     fontSize: 15,
+  },
+  // 갤러리(보조) 버튼: 외곽선 스타일
+  scanButtonOutline: {
+    paddingVertical: 16,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanButtonOutlineText: {
+    color: colors.text,
+    fontWeight: '500',
+    fontSize: 15,
+  },
+  // 괄사 추천 팝업
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  // 추천 매칭 로딩 카드
+  matchCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    padding: 24,
+    alignItems: 'center',
+    gap: 14,
+  },
+  matchText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  matchTrack: {
+    width: '100%',
+    height: 8,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  matchFill: {
+    height: '100%',
+    backgroundColor: colors.amber500,
+    borderRadius: radius.full,
+  },
+  guashaCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    padding: 16,
+  },
+  guashaHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  guashaHeaderTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  guashaTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  guashaGallery: {
+    width: '100%',
+    height: 220,
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+  },
+  guashaImage: {
+    width: '100%',
+    height: 220,
+  },
+  guashaSwipeHint: {
+    color: colors.textFainter,
+    fontSize: 11,
+    textAlign: 'center',
+    paddingVertical: 8,
+  },
+  guashaName: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  guashaDesc: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  guashaReason: {
+    color: colors.amber400,
+    fontSize: 13,
+    marginTop: 8,
+  },
+  guashaBuyBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.amber500,
+    paddingVertical: 14,
+    borderRadius: radius.md,
+    marginTop: 16,
+  },
+  guashaBuyText: {
+    color: colors.bg,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  guashaLaterBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  guashaLaterText: {
+    color: colors.textFaint,
+    fontSize: 14,
   },
 });

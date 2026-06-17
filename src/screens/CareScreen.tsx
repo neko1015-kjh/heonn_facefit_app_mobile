@@ -1,7 +1,8 @@
 import { Feather } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Text from '../components/AppText';
+import { getHistory, ScanRecord } from '../api';
 import { colors, radius } from '../theme';
 
 // [5] 실시간 맞춤 케어 화면입니다.
@@ -48,6 +49,17 @@ export default function CareScreen() {
   // 현재 설정 온도(°C)와 온도 막대의 실제 가로 길이
   const [temp, setTemp] = useState(38);
   const [trackWidth, setTrackWidth] = useState(0);
+  // 최신 분석 기록 (케어 안내를 분석 기반으로 만들기 위해 사용)
+  const [latest, setLatest] = useState<ScanRecord | null>(null);
+
+  useEffect(() => {
+    getHistory()
+      .then((d) => setLatest(d.records[0] ?? null))
+      .catch((e) => console.log('이력 불러오기 실패:', e));
+  }, []);
+
+  // 분석에서 케어가 더 필요한 쪽(없으면 기본 안내)
+  const careSide = latest?.care_side;
 
   // 막대에서 손가락이 닿은 가로 위치를 1~45°C 값으로 바꿉니다.
   function updateTempFromTouch(locationX: number) {
@@ -84,7 +96,9 @@ export default function CareScreen() {
 
         <View style={styles.bubble}>
           <Text style={styles.bubbleText}>
-            오른쪽 턱선(교근) 부위를{'\n'}부드럽게 위로 쓸어주세요
+            {careSide
+              ? `${careSide} 턱선(교근) 부위를\n부드럽게 위로 쓸어주세요`
+              : 'AI스캔으로 분석하면\n부위별 맞춤 가이드를 받을 수 있어요'}
           </Text>
         </View>
       </View>
