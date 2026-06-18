@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
 import Text from '../components/AppText';
 import { colors, radius } from '../theme';
+
+// 메인(로그인) 화면에 보여줄 괄사 디바이스 대표 이미지
+const GUASHA_IMAGE = require('../../assets/products/device1.jpg');
 
 // [1] 로그인(온보딩) 화면입니다.
 // 카카오/네이버/구글 버튼을 누르면 다음 단계(기기 페어링)로 넘어갑니다.
@@ -23,9 +26,9 @@ export default function LoginScreen({ onLogin }: Props) {
         <Text style={styles.logo}>HeOnn Facefit</Text>
         <Text style={styles.tagline}>초개인화 맞춤형 뷰티 플랫폼</Text>
 
-        {/* 큰 원형 로고 아이콘 */}
+        {/* 큰 원형 영역에 괄사 디바이스 이미지 */}
         <View style={styles.logoCircle}>
-          <Ionicons name="sparkles" size={48} color={colors.amber400} />
+          <Image source={GUASHA_IMAGE} style={styles.logoImage} resizeMode="cover" />
         </View>
 
         {/* 자동 로그인 체크박스 */}
@@ -110,6 +113,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 64,
+    overflow: 'hidden', // 이미지를 원형으로 자르기
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   rememberRow: {
     flexDirection: 'row',

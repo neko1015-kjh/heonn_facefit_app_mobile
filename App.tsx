@@ -19,8 +19,8 @@ import StoreScreen from './src/screens/StoreScreen';
 
 // 앱 전체 단계: 'login'(로그인) → 'pairing'(기기 연결) → 'main'(메인 앱)
 type AppState = 'login' | 'pairing' | 'main';
-// 페어링 단계: 'searching'(검색) → 'found'(발견) → 'connected'(연결됨)
-type PairingState = 'searching' | 'found' | 'connected';
+// 페어링 단계: 'searching'(검색) → 'found'(발견) → 'connecting'(동기화 중) → 'connected'(연결됨)
+type PairingState = 'searching' | 'found' | 'connecting' | 'connected';
 
 // FaceFit(HeOnn) 앱의 최상위 화면입니다.
 // 여기서 "지금 어떤 화면을 보여줄지"를 결정하고, 각 화면을 연결합니다.
@@ -118,10 +118,15 @@ export default function App() {
     setAppState('login');
   }
 
-  // 기기 "연결" 버튼을 눌렀을 때: 연결됨 표시 → 1.5초 뒤 메인 앱으로 이동
+  // 기기 "연결" 버튼을 눌렀을 때:
+  // 동기화(싱크) 로딩 → 완료 표시 → 메인 앱으로 이동
   function handleConnect() {
-    setPairingState('connected');
-    setTimeout(() => setAppState('main'), 1500);
+    setPairingState('connecting');
+    // 동기화 단계 진행 시간(약 3.2초) 후 완료
+    setTimeout(() => {
+      setPairingState('connected');
+      setTimeout(() => setAppState('main'), 1200);
+    }, 3200);
   }
 
   return (

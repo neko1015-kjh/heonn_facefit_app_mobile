@@ -1,21 +1,37 @@
 import { Feather } from '@expo/vector-icons';
-import { useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import Text from '../components/AppText';
 import { colors, radius } from '../theme';
 
 // [2] 디바이스 페어링(블루투스 연결) 화면입니다.
-// 상태(pairingState): 'searching'(검색 중) → 'found'(발견) → 'connected'(연결됨)
-type PairingState = 'searching' | 'found' | 'connected';
+// 상태: 'searching'(검색) → 'found'(발견) → 'connecting'(동기화 중) → 'connected'(연결됨)
+type PairingState = 'searching' | 'found' | 'connecting' | 'connected';
 
 type Props = {
   pairingState: PairingState;
   onConnect: () => void;
 };
 
+// 기기와 동기화하는 단계들 (순서대로 진행 표시)
+const SYNC_STEPS = ['기기 인증', '맞춤 설정 동기화', '온도·모드 불러오기', '연결 마무리'];
+
 export default function PairingScreen({ pairingState, onConnect }: Props) {
   // 검색 중일 때 바깥으로 퍼지는 물결 애니메이션 값입니다.
   const ripple = useRef(new Animated.Value(0)).current;
+  // 동기화 진행 단계(0부터 SYNC_STEPS 끝까지 순서대로 올라감)
+  const [syncStep, setSyncStep] = useState(0);
+
+  // '동기화 중'일 때 단계를 순서대로 진행시킵니다(약 0.8초 간격).
+  useEffect(() => {
+    if (pairingState === 'connecting') {
+      setSyncStep(0);
+      const id = setInterval(() => {
+        setSyncStep((s) => (s >= SYNC_STEPS.length - 1 ? s : s + 1));
+      }, 800);
+      return () => clearInterval(id);
+    }
+  }, [pairingState]);
 
   useEffect(() => {
     if (pairingState === 'searching') {
@@ -51,6 +67,7 @@ export default function PairingScreen({ pairingState, onConnect }: Props) {
         <Text style={styles.subtitle}>
           {pairingState === 'searching' && '근처의 HeOnn 괄사를 찾고 있습니다...'}
           {pairingState === 'found' && '기기를 발견했습니다!'}
+          {pairingState === 'connecting' && '기기와 동기화하는 중입니다...'}
           {pairingState === 'connected' && '연결이 완료되었습니다.'}
         </Text>
       </View>
@@ -70,6 +87,8 @@ export default function PairingScreen({ pairingState, onConnect }: Props) {
           >
             {pairingState === 'connected' ? (
               <Feather name="check-circle" size={48} color={colors.bg} />
+            ) : pairingState === 'connecting' ? (
+              <ActivityIndicator size="large" color={colors.amber400} />
             ) : (
               <Feather name="smartphone" size={48} color={colors.amber400} />
             )}
@@ -92,6 +111,42 @@ export default function PairingScreen({ pairingState, onConnect }: Props) {
               <Text style={styles.connectBtnText}>연결</Text>
             </View>
           </Pressable>
+        )}
+
+        {/* 동기화 중: 단계별 진행 카드 */}
+        {pairingState === 'connecting' && (
+          <View style={styles.syncCard}>
+            {SYNC_STEPS.map((label, i) => {
+              const done = i < syncStep;
+              const active = i === syncStep;
+              return (
+                <View key={label} style={styles.syncRow}>
+                  <View style={styles.syncIconBox}>
+                    {done ? (
+                      <Feather name="check" size={16} color={colors.emerald} />
+                    ) : active ? (
+                      <ActivityIndicator size="small" color={colors.amber400} />
+                    ) : (
+                      <View style={styles.syncDot} />
+                    )}
+                  </View>
+                  <Text style={[styles.syncLabel, (done || active) && styles.syncLabelActive]}>
+                    {label}
+                  </Text>
+                </View>
+              );
+            })}
+
+            {/* 진행 바 */}
+            <View style={styles.syncTrack}>
+              <View
+                style={[
+                  styles.syncFill,
+                  { width: `${((syncStep + 1) / SYNC_STEPS.length) * 100}%` },
+                ]}
+              />
+            </View>
+          </View>
         )}
       </View>
     </View>
@@ -194,5 +249,55 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: '500',
+  },
+  // 동기화 진행 카드
+  syncCard: {
+    width: '100%',
+    marginTop: 56,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    gap: 16,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  syncIconBox: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncDot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.full,
+    backgroundColor: colors.textFainter,
+  },
+  syncLabel: {
+    color: colors.textFaint,
+    fontSize: 14,
+  },
+  syncLabelActive: {
+    color: colors.text,
+    fontWeight: '500',
+  },
+  syncTrack: {
+    width: '100%',
+    height: 6,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  syncFill: {
+    height: '100%',
+    backgroundColor: colors.amber500,
+    borderRadius: radius.full,
   },
 });
