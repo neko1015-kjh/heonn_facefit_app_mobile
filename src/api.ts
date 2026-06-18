@@ -29,11 +29,16 @@ export async function loadStoredToken(): Promise<string | null> {
 }
 
 // 토큰을 저장(로그인) 또는 삭제(로그아웃)합니다.
-export async function setAuthToken(token: string | null) {
+// persist=true: 기기에 저장(자동 로그인 유지) / false: 이번 실행에만 사용(저장 안 함)
+export async function setAuthToken(token: string | null, persist = true) {
   authToken = token;
   try {
-    if (token) await AsyncStorage.setItem(TOKEN_KEY, token);
-    else await AsyncStorage.removeItem(TOKEN_KEY);
+    if (token && persist) {
+      await AsyncStorage.setItem(TOKEN_KEY, token);
+    } else {
+      // 토큰이 없거나 자동 로그인을 끈 경우 → 저장된 토큰 제거
+      await AsyncStorage.removeItem(TOKEN_KEY);
+    }
   } catch {
     // 저장 실패는 무시(메모리에는 유지)
   }
@@ -48,14 +53,15 @@ function authHeaders(): Record<string, string> {
 export type AppUser = { id: number; provider: string; display_name: string };
 
 // 소셜 버튼으로 로그인 → 토큰 발급 후 저장.
-export async function login(provider: string): Promise<AppUser> {
+// remember=true면 기기에 저장(다음에 자동 로그인), false면 이번만 로그인.
+export async function login(provider: string, remember = true): Promise<AppUser> {
   const res = await fetch(`${BACKEND_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider }),
   });
   const data = await res.json();
-  await setAuthToken(data.token);
+  await setAuthToken(data.token, remember);
   return data.user;
 }
 

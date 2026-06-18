@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Text from '../components/AppText';
 import { colors, radius } from '../theme';
@@ -6,11 +7,15 @@ import { colors, radius } from '../theme';
 // [1] 로그인(온보딩) 화면입니다.
 // 카카오/네이버/구글 버튼을 누르면 다음 단계(기기 페어링)로 넘어갑니다.
 // onLogin: 로그인 버튼을 눌렀을 때 실행할 함수 (App.tsx에서 전달받음)
+//   remember: 자동 로그인 체크 여부(켜면 다음에 자동 로그인)
 type Props = {
-  onLogin: (provider: string) => void;
+  onLogin: (provider: string, remember: boolean) => void;
 };
 
 export default function LoginScreen({ onLogin }: Props) {
+  // 자동 로그인 체크 상태 (기본: 켜짐)
+  const [remember, setRemember] = useState(true);
+
   return (
     <View style={styles.container}>
       {/* 가운데 영역: 로고와 안내 문구, 로그인 버튼들 */}
@@ -23,11 +28,21 @@ export default function LoginScreen({ onLogin }: Props) {
           <Ionicons name="sparkles" size={48} color={colors.amber400} />
         </View>
 
+        {/* 자동 로그인 체크박스 */}
+        <Pressable style={styles.rememberRow} onPress={() => setRemember((v) => !v)}>
+          <Ionicons
+            name={remember ? 'checkbox' : 'square-outline'}
+            size={20}
+            color={remember ? colors.amber400 : colors.textFaint}
+          />
+          <Text style={styles.rememberText}>자동 로그인</Text>
+        </Pressable>
+
         {/* 소셜 로그인 버튼 묶음 */}
         <View style={styles.buttonGroup}>
           <Pressable
             style={[styles.loginButton, { backgroundColor: colors.kakao }]}
-            onPress={() => onLogin('카카오')}
+            onPress={() => onLogin('카카오', remember)}
           >
             <Text style={[styles.loginText, { color: colors.black }]}>
               카카오로 3초 만에 시작하기
@@ -36,7 +51,7 @@ export default function LoginScreen({ onLogin }: Props) {
 
           <Pressable
             style={[styles.loginButton, { backgroundColor: colors.naver }]}
-            onPress={() => onLogin('네이버')}
+            onPress={() => onLogin('네이버', remember)}
           >
             <Text style={[styles.loginText, { color: colors.white }]}>
               네이버로 시작하기
@@ -45,7 +60,7 @@ export default function LoginScreen({ onLogin }: Props) {
 
           <Pressable
             style={[styles.loginButton, styles.googleButton]}
-            onPress={() => onLogin('구글')}
+            onPress={() => onLogin('구글', remember)}
           >
             <Text style={[styles.loginText, { color: '#1a1a1a' }]}>
               Google로 시작하기
@@ -95,6 +110,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 64,
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 14,
+    paddingVertical: 4,
+  },
+  rememberText: {
+    color: colors.textMuted,
+    fontSize: 14,
   },
   buttonGroup: {
     width: '100%',

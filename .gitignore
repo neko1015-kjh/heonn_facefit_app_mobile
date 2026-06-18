@@ -9,6 +9,9 @@ dist/
 web-build/
 expo-env.d.ts
 
+# 웹 배포용 압축 산출물 (build_web.py 결과)
+site.zip
+
 # Native
 .kotlin/
 *.orig.*
