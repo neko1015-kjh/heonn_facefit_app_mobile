@@ -240,6 +240,36 @@ export default function StoreScreen({ user, onLogout }: StoreScreenProps) {
           </View>
           <Text style={styles.metricValue}>{metrics?.retention.reuse_rate ?? 0}%</Text>
         </View>
+
+        <View style={styles.metricDivider} />
+
+        <View style={styles.metricRow}>
+          <View style={styles.metricLeft}>
+            <Feather name="smile" size={18} color={colors.amber400} />
+            <View>
+              <Text style={styles.metricLabel}>만족도 (CSAT)</Text>
+              <Text style={styles.metricSub}>
+                평가 {metrics?.csat.total_responses ?? 0}건 중 {metrics?.csat.satisfied_count ?? 0}건 만족
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.metricValue}>{metrics?.csat.csat ?? 0}%</Text>
+        </View>
+
+        <View style={styles.metricDivider} />
+
+        <View style={styles.metricRow}>
+          <View style={styles.metricLeft}>
+            <Feather name="clock" size={18} color={colors.amber400} />
+            <View>
+              <Text style={styles.metricLabel}>분석 처리 시간</Text>
+              <Text style={styles.metricSub}>
+                분석 {metrics?.latency.sample_count ?? 0}건 평균 (약 {metrics?.latency.approx_fps ?? 0}장/초)
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.metricValue}>{metrics?.latency.avg_duration_ms ?? 0}ms</Text>
+        </View>
       </View>
 
       {/* 내 디바이스 정보 및 관리 */}

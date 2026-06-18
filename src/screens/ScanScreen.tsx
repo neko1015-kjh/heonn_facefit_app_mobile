@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import Text from '../components/AppText';
 import Face3DViewer from '../components/Face3DViewer';
-import { saveScan, FaceScore, LandmarkPoint } from '../api';
+import { saveScan, FaceScore, LandmarkPoint, submitFeedback } from '../api';
 import { colors, radius } from '../theme';
 
 // 추천할 괄사 디바이스 이미지들 (assets/products 폴더의 실제 이미지)
@@ -47,6 +47,7 @@ export default function ScanScreen() {
   const [galleryWidth, setGalleryWidth] = useState(280); // 이미지 갤러리 한 장 너비
   const [matching, setMatching] = useState(false); // "추천 상품 매칭 중" 로딩 표시 여부
   const [show3D, setShow3D] = useState(false); // 3D 점구름 뷰어 팝업
+  const [feedbackDone, setFeedbackDone] = useState(false); // 만족도 평가 완료 여부
 
   // 스캔 라인 위치 애니메이션 값
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -108,6 +109,7 @@ export default function ScanScreen() {
     setLandmarks(null);
     setImageSize(null);
     setMessage('');
+    setFeedbackDone(false); // 새 분석이므로 만족도 평가를 다시 받습니다.
     setStatus('analyzing');
 
     try {
@@ -140,6 +142,16 @@ export default function ScanScreen() {
       console.log('분석/저장 실패:', e);
       setStatus('error');
       setMessage('백엔드 서버에 연결하지 못했습니다. 서버가 켜져 있는지 확인해 주세요.');
+    }
+  }
+
+  // 만족도 평가 제출(도움됨/아니에요). 화면에는 바로 감사 메시지를 보여줍니다.
+  async function handleFeedback(satisfied: boolean) {
+    setFeedbackDone(true);
+    try {
+      await submitFeedback(satisfied);
+    } catch (e) {
+      console.log('평가 전송 실패:', e);
     }
   }
 
@@ -233,6 +245,27 @@ export default function ScanScreen() {
               </Pressable>
             )}
             <Text style={styles.hintText}>리포트·마이 탭에서 변화와 추천을 확인하세요.</Text>
+
+            {/* 만족도(CSAT) 평가 */}
+            <View style={styles.feedbackBox}>
+              {!feedbackDone ? (
+                <>
+                  <Text style={styles.feedbackQuestion}>이 분석이 도움이 됐나요?</Text>
+                  <View style={styles.feedbackButtons}>
+                    <Pressable style={styles.feedbackBtn} onPress={() => handleFeedback(true)}>
+                      <Feather name="thumbs-up" size={16} color={colors.emerald} />
+                      <Text style={styles.feedbackBtnText}>도움돼요</Text>
+                    </Pressable>
+                    <Pressable style={styles.feedbackBtn} onPress={() => handleFeedback(false)}>
+                      <Feather name="thumbs-down" size={16} color={colors.textMuted} />
+                      <Text style={styles.feedbackBtnText}>아니에요</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.feedbackThanks}>평가해 주셔서 감사합니다! 🙏</Text>
+              )}
+            </View>
           </View>
         )}
 
@@ -548,6 +581,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 12,
     textAlign: 'center',
+  },
+  // 만족도(CSAT) 평가
+  feedbackBox: {
+    width: '100%',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    alignItems: 'center',
+  },
+  feedbackQuestion: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  feedbackButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  feedbackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    backgroundColor: colors.surface2,
+  },
+  feedbackBtnText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  feedbackThanks: {
+    color: colors.emerald,
+    fontSize: 13,
+    fontWeight: '500',
   },
   view3dButton: {
     flexDirection: 'row',

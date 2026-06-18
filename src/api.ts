@@ -256,15 +256,38 @@ export type AiMetrics = {
     returning_users: number; // 2회 이상 분석 사용자 수
     reuse_rate: number; // 재사용률(%)
   };
+  csat: {
+    total_responses: number; // 전체 평가 수
+    satisfied_count: number; // 만족 응답 수
+    csat: number; // 만족도(%)
+  };
+  latency: {
+    sample_count: number; // 측정에 쓰인 분석 건수
+    avg_duration_ms: number; // 평균 처리 시간(ms)
+    approx_fps: number; // 환산 처리량(장/초, 참고용)
+  };
 };
 
-// 검출 성공률·재사용률 두 지표를 한 번에 가져옵니다.
+// 검출 성공률·재사용률·만족도·처리 시간 지표를 한 번에 가져옵니다.
 export async function getAiMetrics(): Promise<AiMetrics> {
-  const [landmarkRes, retentionRes] = await Promise.all([
+  const [landmarkRes, retentionRes, csatRes, latencyRes] = await Promise.all([
     fetch(`${BACKEND_URL}/metrics/landmark`),
     fetch(`${BACKEND_URL}/metrics/retention`),
+    fetch(`${BACKEND_URL}/metrics/csat`),
+    fetch(`${BACKEND_URL}/metrics/latency`),
   ]);
   const landmark = await landmarkRes.json();
   const retention = await retentionRes.json();
-  return { landmark, retention };
+  const csat = await csatRes.json();
+  const latency = await latencyRes.json();
+  return { landmark, retention, csat, latency };
+}
+
+// 만족도 평가를 제출합니다. (satisfied: true=도움됨, false=아니에요)
+export async function submitFeedback(satisfied: boolean): Promise<void> {
+  await fetch(`${BACKEND_URL}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ satisfied }),
+  });
 }
