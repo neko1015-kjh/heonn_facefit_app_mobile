@@ -4,12 +4,14 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// 백엔드 서버 주소입니다. (FastAPI는 8000번 포트에서 실행)
+// 백엔드 서버 주소입니다.
 //
-// 'localhost'를 사용합니다.
-// - PC 웹 브라우저(localhost:8081)에서 그대로 동작합니다.
-// - 안드로이드 USB(adb reverse) 연결 시에도 휴대폰이 localhost로 PC에 접근하므로 동일하게 동작합니다.
-export const BACKEND_URL = 'http://localhost:8000';
+// 클라우드(Hugging Face Spaces)에 배포된 서버를 사용합니다.
+// 이 주소 덕분에 PC 웹·휴대폰 앱 어디서나 같은 서버에 접속해 분석할 수 있습니다.
+//
+// 참고: 내 PC에서 백엔드를 직접 띄워 테스트하려면 아래 주소를
+//       'http://localhost:8000' 으로 잠시 바꾸면 됩니다.
+export const BACKEND_URL = 'https://neko1015-facefit-backend.hf.space';
 
 // ── 로그인 토큰 관리 ──────────────────────────────────────────
 // 로그인하면 받은 토큰을 메모리 + 기기에 저장해 두고, 모든 요청에 함께 보냅니다.
