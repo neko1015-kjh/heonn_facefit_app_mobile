@@ -2,6 +2,7 @@
 // 별도 폴더(../heonn_facefit_app_backend)의 Python 서버와 연결합니다.
 
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 백엔드 서버 주소입니다. (FastAPI는 8000번 포트에서 실행)
 //
@@ -9,6 +10,69 @@ import { Platform } from 'react-native';
 // - PC 웹 브라우저(localhost:8081)에서 그대로 동작합니다.
 // - 안드로이드 USB(adb reverse) 연결 시에도 휴대폰이 localhost로 PC에 접근하므로 동일하게 동작합니다.
 export const BACKEND_URL = 'http://localhost:8000';
+
+// ── 로그인 토큰 관리 ──────────────────────────────────────────
+// 로그인하면 받은 토큰을 메모리 + 기기에 저장해 두고, 모든 요청에 함께 보냅니다.
+const TOKEN_KEY = 'facefit_token';
+let authToken: string | null = null;
+
+// 앱 시작 시 기기에 저장된 토큰을 불러옵니다.
+export async function loadStoredToken(): Promise<string | null> {
+  try {
+    authToken = await AsyncStorage.getItem(TOKEN_KEY);
+  } catch {
+    authToken = null;
+  }
+  return authToken;
+}
+
+// 토큰을 저장(로그인) 또는 삭제(로그아웃)합니다.
+export async function setAuthToken(token: string | null) {
+  authToken = token;
+  try {
+    if (token) await AsyncStorage.setItem(TOKEN_KEY, token);
+    else await AsyncStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // 저장 실패는 무시(메모리에는 유지)
+  }
+}
+
+// 인증 헤더를 만듭니다(토큰이 있을 때만).
+function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+// 로그인한 사용자 정보
+export type AppUser = { id: number; provider: string; display_name: string };
+
+// 소셜 버튼으로 로그인 → 토큰 발급 후 저장.
+export async function login(provider: string): Promise<AppUser> {
+  const res = await fetch(`${BACKEND_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider }),
+  });
+  const data = await res.json();
+  await setAuthToken(data.token);
+  return data.user;
+}
+
+// 저장된 토큰으로 로그인 상태 확인(자동 로그인). 유효하면 사용자, 아니면 null.
+export async function fetchMe(): Promise<AppUser | null> {
+  if (!authToken) return null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/auth/me`, { headers: authHeaders() });
+    const data = await res.json();
+    return data.authenticated ? data.user : null;
+  } catch {
+    return null;
+  }
+}
+
+// 로그아웃: 토큰 삭제.
+export async function logout() {
+  await setAuthToken(null);
+}
 
 // 백엔드 서버가 켜져 있고 정상적으로 응답하는지 확인하는 함수입니다.
 // 서버가 응답하면 true, 그렇지 않으면 false를 돌려줍니다.
@@ -140,6 +204,7 @@ export async function saveScan(
   const formData = await buildImageFormData(uri);
   const response = await fetch(`${BACKEND_URL}/history/scan`, {
     method: 'POST',
+    headers: authHeaders(),
     body: formData,
   });
   return response.json();
@@ -147,7 +212,7 @@ export async function saveScan(
 
 // 저장된 모든 이력을 최신순으로 가져오는 함수입니다.
 export async function getHistory(): Promise<{ count: number; records: ScanRecord[] }> {
-  const response = await fetch(`${BACKEND_URL}/history`);
+  const response = await fetch(`${BACKEND_URL}/history`, { headers: authHeaders() });
   return response.json();
 }
 
@@ -173,7 +238,33 @@ export type RecommendationResult = {
 };
 
 // 최신 분석 결과 기반 맞춤 추천을 가져오는 함수입니다.
+// 로그인한 사용자의 기록만 보도록 인증 헤더를 함께 보냅니다.
 export async function getRecommendations(): Promise<RecommendationResult> {
-  const response = await fetch(`${BACKEND_URL}/recommendations`);
+  const response = await fetch(`${BACKEND_URL}/recommendations`, { headers: authHeaders() });
   return response.json();
+}
+
+// AI 검증 지표(개발·검증용)의 형태입니다.
+export type AiMetrics = {
+  landmark: {
+    total_attempts: number; // 분석 시도 횟수
+    success_count: number; // 검출 성공 횟수
+    success_rate: number; // 검출 성공률(%)
+  };
+  retention: {
+    active_users: number; // 분석 1회 이상 사용자 수
+    returning_users: number; // 2회 이상 분석 사용자 수
+    reuse_rate: number; // 재사용률(%)
+  };
+};
+
+// 검출 성공률·재사용률 두 지표를 한 번에 가져옵니다.
+export async function getAiMetrics(): Promise<AiMetrics> {
+  const [landmarkRes, retentionRes] = await Promise.all([
+    fetch(`${BACKEND_URL}/metrics/landmark`),
+    fetch(`${BACKEND_URL}/metrics/retention`),
+  ]);
+  const landmark = await landmarkRes.json();
+  const retention = await retentionRes.json();
+  return { landmark, retention };
 }

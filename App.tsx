@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { addCareNotificationResponseListener } from './src/notify';
+import * as api from './src/api';
 import BottomNav, { TabKey } from './src/components/BottomNav';
 import { colors } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
@@ -25,6 +26,8 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('login');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [pairingState, setPairingState] = useState<PairingState>('searching');
+  // 로그인한 사용자 정보(없으면 null)
+  const [user, setUser] = useState<api.AppUser | null>(null);
 
   // 시스템 알림을 눌렀을 때, 해당 화면(케어 탭)으로 이동합니다.
   useEffect(() => {
@@ -33,6 +36,21 @@ export default function App() {
       setActiveTab('care');
     });
     return unsubscribe;
+  }, []);
+
+  // 앱을 켤 때: 기기에 저장된 로그인 정보가 있으면 자동으로 불러옵니다.
+  // (다시 로그인하지 않아도 됨. 기기 연결 단계는 그대로 거칩니다.)
+  useEffect(() => {
+    (async () => {
+      await api.loadStoredToken();
+      const savedUser = await api.fetchMe();
+      if (savedUser) {
+        setUser(savedUser);
+        setAppState('pairing');
+        setPairingState('searching');
+        setTimeout(() => setPairingState('found'), 2000);
+      }
+    })();
   }, []);
 
   // Pretendard 폰트 파일들을 불러옵니다. (다 불러오기 전까지는 빈 화면 표시)
@@ -48,12 +66,28 @@ export default function App() {
     return <View style={styles.root} />;
   }
 
-  // 로그인 버튼을 눌렀을 때: 페어링 화면으로 이동 → 2초 뒤 기기 발견
-  function handleLogin(provider: string) {
+  // 로그인 버튼을 눌렀을 때: 서버에 로그인 요청 → 성공하면 페어링 화면으로 이동
+  async function handleLogin(provider: string) {
     console.log(`${provider} 로그인 시도`);
-    setAppState('pairing');
-    setPairingState('searching');
-    setTimeout(() => setPairingState('found'), 2000);
+    try {
+      const loggedIn = await api.login(provider);
+      setUser(loggedIn);
+      setAppState('pairing');
+      setPairingState('searching');
+      setTimeout(() => setPairingState('found'), 2000);
+    } catch (e) {
+      // 서버가 꺼져 있거나 연결이 안 될 때 여기로 옵니다.
+      console.log('로그인 실패:', e);
+      alert('서버에 연결할 수 없어 로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+  }
+
+  // 로그아웃: 저장된 로그인 정보를 지우고 로그인 화면으로 돌아갑니다.
+  async function handleLogout() {
+    await api.logout();
+    setUser(null);
+    setActiveTab('home');
+    setAppState('login');
   }
 
   // 기기 "연결" 버튼을 눌렀을 때: 연결됨 표시 → 1.5초 뒤 메인 앱으로 이동
@@ -79,7 +113,7 @@ export default function App() {
             {activeTab === 'scan' && <ScanScreen />}
             {activeTab === 'care' && <CareScreen />}
             {activeTab === 'report' && <ReportScreen />}
-            {activeTab === 'store' && <StoreScreen />}
+            {activeTab === 'store' && <StoreScreen user={user} onLogout={handleLogout} />}
 
             {/* 화면 맨 아래 고정 탭 바 */}
             <BottomNav activeTab={activeTab} onChange={setActiveTab} />

@@ -3,7 +3,7 @@ import { ComponentProps, useEffect, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Line, Rect } from 'react-native-svg';
 import Text from '../components/AppText';
-import { getRecommendations, RecommendationResult } from '../api';
+import { getRecommendations, RecommendationResult, AppUser, getAiMetrics, AiMetrics } from '../api';
 import { colors, radius } from '../theme';
 
 // 세척 주기 설정: 10회 사용마다 세척 권장 (예시 데이터)
@@ -103,8 +103,15 @@ const USAGE_HISTORY = [
   { date: '2025.08.22', duration: '9분', area: '눈가·관자놀이', temp: '35°C', mode: '수면' },
 ];
 
-export default function StoreScreen() {
+// 상위(App)에서 로그인한 사용자 정보와 로그아웃 기능을 받습니다.
+type StoreScreenProps = {
+  user: AppUser | null;
+  onLogout: () => void;
+};
+
+export default function StoreScreen({ user, onLogout }: StoreScreenProps) {
   const [rec, setRec] = useState<RecommendationResult | null>(null);
+  const [metrics, setMetrics] = useState<AiMetrics | null>(null); // AI 검증 지표
   const [usageOpen, setUsageOpen] = useState(false); // 사용 기록 팝업 열림 여부
   const [storageOpen, setStorageOpen] = useState(false); // 보관 가이드 팝업 열림 여부
   const [cleaningOpen, setCleaningOpen] = useState(false); // 세척 방법 가이드 팝업 열림 여부
@@ -115,6 +122,10 @@ export default function StoreScreen() {
     getRecommendations()
       .then(setRec)
       .catch((e) => console.log('추천 불러오기 실패:', e));
+    // AI 검증 지표(검출 성공률·재사용률)도 함께 불러옵니다.
+    getAiMetrics()
+      .then(setMetrics)
+      .catch((e) => console.log('지표 불러오기 실패:', e));
   }, []);
 
   return (
@@ -128,6 +139,25 @@ export default function StoreScreen() {
       <View style={styles.topBar}>
         <Text style={styles.title}>스토어 / 마이페이지</Text>
         <Feather name="settings" size={20} color={colors.textMuted} />
+      </View>
+
+      {/* 로그인한 사용자 정보 + 로그아웃 */}
+      <View style={styles.accountCard}>
+        <View style={styles.accountLeft}>
+          <View style={styles.accountAvatar}>
+            <Feather name="user" size={22} color={colors.amber400} />
+          </View>
+          <View>
+            <Text style={styles.accountName}>{user?.display_name ?? '게스트'}</Text>
+            <Text style={styles.accountProvider}>
+              {user ? `${user.provider} 계정으로 로그인됨` : '로그인 정보가 없습니다'}
+            </Text>
+          </View>
+        </View>
+        <Pressable style={styles.logoutButton} onPress={onLogout}>
+          <Feather name="log-out" size={16} color={colors.textMuted} />
+          <Text style={styles.logoutText}>로그아웃</Text>
+        </Pressable>
       </View>
 
       {/* 맞춤 솔루션 안내 */}
@@ -179,6 +209,38 @@ export default function StoreScreen() {
           </View>
         ))}
       </ScrollView>
+
+      {/* AI 검증 지표 (개발·검증용 — 실제 측정 데이터) */}
+      <Text style={styles.deviceSectionTitle}>AI 검증 지표</Text>
+      <View style={styles.metricsCard}>
+        <View style={styles.metricRow}>
+          <View style={styles.metricLeft}>
+            <Feather name="target" size={18} color={colors.amber400} />
+            <View>
+              <Text style={styles.metricLabel}>랜드마크 검출 성공률</Text>
+              <Text style={styles.metricSub}>
+                분석 {metrics?.landmark.total_attempts ?? 0}회 중 {metrics?.landmark.success_count ?? 0}회 성공
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.metricValue}>{metrics?.landmark.success_rate ?? 0}%</Text>
+        </View>
+
+        <View style={styles.metricDivider} />
+
+        <View style={styles.metricRow}>
+          <View style={styles.metricLeft}>
+            <Feather name="repeat" size={18} color={colors.amber400} />
+            <View>
+              <Text style={styles.metricLabel}>재사용률</Text>
+              <Text style={styles.metricSub}>
+                사용자 {metrics?.retention.active_users ?? 0}명 중 {metrics?.retention.returning_users ?? 0}명 재사용
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.metricValue}>{metrics?.retention.reuse_rate ?? 0}%</Text>
+        </View>
+      </View>
 
       {/* 내 디바이스 정보 및 관리 */}
       <Text style={styles.deviceSectionTitle}>내 디바이스 정보 및 관리</Text>
@@ -444,6 +506,57 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 16,
   },
+  // 로그인 사용자 카드
+  accountCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  accountLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 1,
+  },
+  accountAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountName: {
+    color: colors.text,
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  accountProvider: {
+    color: colors.textFaint,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+  },
+  logoutText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -543,6 +656,46 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 16,
     marginBottom: 16,
+  },
+  // AI 검증 지표 카드
+  metricsCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  metricLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 1,
+  },
+  metricLabel: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  metricSub: {
+    color: colors.textFaint,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  metricValue: {
+    color: colors.amber400,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  metricDivider: {
+    height: 1,
+    backgroundColor: colors.border,
   },
   deviceCard: {
     backgroundColor: colors.surface,
