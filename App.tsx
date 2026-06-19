@@ -1,7 +1,7 @@
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import Text from './src/components/AppText';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -47,7 +47,20 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        await api.loadStoredToken();
+        // 웹: 카카오 로그인 후 돌아오면 URL에 ?token= 이 붙어 있습니다.
+        let urlToken: string | null = null;
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          urlToken = params.get('token');
+          if (urlToken) {
+            await api.setAuthToken(urlToken); // 기기에 저장(자동 로그인)
+            // 주소창에서 token 등 흔적을 지웁니다(깔끔하게).
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+        }
+        if (!urlToken) {
+          await api.loadStoredToken();
+        }
         const savedUser = await api.fetchMe();
         if (savedUser) {
           setUser(savedUser);
@@ -97,6 +110,14 @@ export default function App() {
   // remember: 자동 로그인 체크 여부(끄면 다음 실행에 자동 로그인 안 함)
   async function handleLogin(provider: string, remember: boolean) {
     console.log(`${provider} 로그인 시도 (자동 로그인: ${remember})`);
+
+    // 카카오는 실제 OAuth — 웹에서는 카카오 인증 페이지로 이동합니다.
+    // (인증 후 백엔드 콜백을 거쳐 ?token= 을 달고 이 웹으로 돌아옵니다)
+    if (provider === '카카오' && Platform.OS === 'web') {
+      window.location.href = `${api.BACKEND_URL}/auth/kakao/login`;
+      return;
+    }
+
     try {
       const loggedIn = await api.login(provider, remember);
       setUser(loggedIn);
