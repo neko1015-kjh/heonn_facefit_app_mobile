@@ -49,6 +49,29 @@ function authHeaders(): Record<string, string> {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
 }
 
+// ── 기기 연결(페어링) 기억 ─────────────────────────────────────
+// 한 번 기기를 연결하면 기억해 두고, 다음 실행 때 페어링 화면을 건너뜁니다.
+const PAIRED_KEY = 'facefit_paired';
+
+// 저장된 "기기 연결됨" 상태를 불러옵니다.
+export async function loadPaired(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(PAIRED_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+// 기기 연결 상태를 저장(true) 또는 해제(false)합니다.
+export async function setPaired(value: boolean) {
+  try {
+    if (value) await AsyncStorage.setItem(PAIRED_KEY, 'true');
+    else await AsyncStorage.removeItem(PAIRED_KEY);
+  } catch {
+    // 저장 실패는 무시
+  }
+}
+
 // 로그인한 사용자 정보
 export type AppUser = { id: number; provider: string; display_name: string };
 

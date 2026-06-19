@@ -1,14 +1,14 @@
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
-import Text from './src/components/AppText';
+import { Platform, StyleSheet, View } from 'react-native';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { addCareNotificationResponseListener } from './src/notify';
 import * as api from './src/api';
 import BottomNav, { TabKey } from './src/components/BottomNav';
 import { colors } from './src/theme';
+import IntroScreen from './src/screens/IntroScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import PairingScreen from './src/screens/PairingScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -17,21 +17,20 @@ import CareScreen from './src/screens/CareScreen';
 import ReportScreen from './src/screens/ReportScreen';
 import StoreScreen from './src/screens/StoreScreen';
 
-// 앱 전체 단계: 'login'(로그인) → 'pairing'(기기 연결) → 'main'(메인 앱)
-type AppState = 'login' | 'pairing' | 'main';
+// 앱 전체 단계: 'intro'(인트로) → 'login'(로그인) → 'pairing'(기기 연결) → 'main'(메인 앱)
+type AppState = 'intro' | 'login' | 'pairing' | 'main';
 // 페어링 단계: 'searching'(검색) → 'found'(발견) → 'connecting'(동기화 중) → 'connected'(연결됨)
 type PairingState = 'searching' | 'found' | 'connecting' | 'connected';
 
 // FaceFit(HeOnn) 앱의 최상위 화면입니다.
 // 여기서 "지금 어떤 화면을 보여줄지"를 결정하고, 각 화면을 연결합니다.
 export default function App() {
-  const [appState, setAppState] = useState<AppState>('login');
+  // 처음엔 인트로 화면부터 시작합니다.
+  const [appState, setAppState] = useState<AppState>('intro');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [pairingState, setPairingState] = useState<PairingState>('searching');
   // 로그인한 사용자 정보(없으면 null)
   const [user, setUser] = useState<api.AppUser | null>(null);
-  // 앱 시작 시 저장된 로그인 정보를 확인하는 중인지 (true면 로딩 화면 표시)
-  const [checkingAuto, setCheckingAuto] = useState(true);
 
   // 시스템 알림을 눌렀을 때, 해당 화면(케어 탭)으로 이동합니다.
   useEffect(() => {
@@ -42,10 +41,16 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // 앱을 켤 때: 기기에 저장된 로그인 정보가 있으면 자동으로 불러옵니다.
-  // (다시 로그인하지 않아도 됨. 기기 연결 단계는 그대로 거칩니다.)
+  // 앱을 켤 때: 인트로를 보여주는 동안 자동 로그인 + 기기 연결 상태를 확인합니다.
+  // - 로그인됨 + 기기 연결 기억 → 바로 홈(메인)
+  // - 로그인됨 + 연결 안 됨 → 기기 연결(페어링) 화면
+  // - 로그인 안 됨 → 로그인 화면
   useEffect(() => {
     (async () => {
+      // 인트로를 최소 2.2초는 보여줍니다(확인이 빨리 끝나도).
+      const minIntro = new Promise((resolve) => setTimeout(resolve, 2200));
+      let savedUser: api.AppUser | null = null;
+      let paired = false;
       try {
         // 웹: 카카오 로그인 후 돌아오면 URL에 ?token= 이 붙어 있습니다.
         let urlToken: string | null = null;
@@ -54,23 +59,33 @@ export default function App() {
           urlToken = params.get('token');
           if (urlToken) {
             await api.setAuthToken(urlToken); // 기기에 저장(자동 로그인)
-            // 주소창에서 token 등 흔적을 지웁니다(깔끔하게).
             window.history.replaceState({}, '', window.location.pathname);
           }
         }
         if (!urlToken) {
           await api.loadStoredToken();
         }
-        const savedUser = await api.fetchMe();
-        if (savedUser) {
-          setUser(savedUser);
+        savedUser = await api.fetchMe();
+        paired = await api.loadPaired();
+      } catch {
+        // 확인 실패는 무시(로그인 화면으로)
+      }
+      await minIntro; // 인트로 최소 표시 시간 보장
+
+      if (savedUser) {
+        setUser(savedUser);
+        if (paired) {
+          // 로그인 + 기기 연결 기억 → 바로 홈
+          setActiveTab('home');
+          setAppState('main');
+        } else {
+          // 로그인됐지만 기기 연결 전 → 페어링
           setAppState('pairing');
           setPairingState('searching');
           setTimeout(() => setPairingState('found'), 2000);
         }
-      } finally {
-        // 확인이 끝나면 로딩 화면을 닫습니다(성공/실패 무관).
-        setCheckingAuto(false);
+      } else {
+        setAppState('login');
       }
     })();
   }, []);
@@ -90,20 +105,6 @@ export default function App() {
   // 폰트가 준비되지 않았으면 어두운 빈 화면만 잠깐 보여줍니다.
   if (!fontsLoaded) {
     return <View style={styles.root} />;
-  }
-
-  // 앱 시작 시 저장된 로그인 정보를 확인하는 동안 로딩 화면을 보여줍니다.
-  if (checkingAuto) {
-    return (
-      <View style={styles.root}>
-        <View style={styles.loading}>
-          <Text style={styles.loadingLogo}>HeOnn Facefit</Text>
-          <ActivityIndicator size="large" color={colors.amber400} style={styles.loadingSpinner} />
-          <Text style={styles.loadingText}>자동 로그인 중…</Text>
-        </View>
-        <StatusBar style="light" />
-      </View>
-    );
   }
 
   // 로그인 버튼을 눌렀을 때: 서버에 로그인 요청 → 성공하면 페어링 화면으로 이동
@@ -146,6 +147,8 @@ export default function App() {
     // 동기화 단계 진행 시간(약 3.2초) 후 완료
     setTimeout(() => {
       setPairingState('connected');
+      // 기기 연결을 기억합니다(다음 실행 때 페어링 건너뛰고 바로 홈).
+      api.setPaired(true);
       setTimeout(() => setAppState('main'), 1200);
     }, 3200);
   }
@@ -154,6 +157,8 @@ export default function App() {
     <View style={styles.root}>
       {/* 화면 가운데에 휴대폰 모양으로 앱을 배치합니다(웹에서 볼 때 보기 좋도록). */}
       <View style={styles.phone}>
+        {appState === 'intro' && <IntroScreen />}
+
         {appState === 'login' && <LoginScreen onLogin={handleLogin} />}
 
         {appState === 'pairing' && (
@@ -195,27 +200,5 @@ const styles = StyleSheet.create({
   },
   mainArea: {
     flex: 1,
-  },
-  // 자동 로그인 확인 중 로딩 화면
-  loading: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 420,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bg,
-  },
-  loadingLogo: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.amber300,
-    marginBottom: 28,
-  },
-  loadingSpinner: {
-    marginBottom: 16,
-  },
-  loadingText: {
-    color: colors.textMuted,
-    fontSize: 14,
   },
 });
