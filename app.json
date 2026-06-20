@@ -21,6 +21,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1313a13c-b9e0-4a04-be19-54cd5f227dea"
+      }
+    },
+    "owner": "neko1015"
   }
 }
