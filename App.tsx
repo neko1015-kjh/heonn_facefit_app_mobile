@@ -112,10 +112,11 @@ export default function App() {
   async function handleLogin(provider: string, remember: boolean) {
     console.log(`${provider} 로그인 시도 (자동 로그인: ${remember})`);
 
-    // 카카오는 실제 OAuth — 웹에서는 카카오 인증 페이지로 이동합니다.
+    // 카카오·구글은 실제 OAuth — 웹에서는 해당 인증 페이지로 이동합니다.
     // (인증 후 백엔드 콜백을 거쳐 ?token= 을 달고 이 웹으로 돌아옵니다)
-    if (provider === '카카오' && Platform.OS === 'web') {
-      window.location.href = `${api.BACKEND_URL}/auth/kakao/login`;
+    if ((provider === '카카오' || provider === '구글') && Platform.OS === 'web') {
+      const path = provider === '카카오' ? 'kakao' : 'google';
+      window.location.href = `${api.BACKEND_URL}/auth/${path}/login`;
       return;
     }
 
