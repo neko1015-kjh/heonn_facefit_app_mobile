@@ -47,6 +47,8 @@ export default function App() {
   // - 로그인 안 됨 → 로그인 화면
   useEffect(() => {
     (async () => {
+      // 백엔드를 미리 깨웁니다(콜드스타트 방지). 로그인·페어링하는 동안 서버가 깨어납니다.
+      api.warmupBackend();
       // 인트로를 최소 2.2초는 보여줍니다(확인이 빨리 끝나도).
       const minIntro = new Promise((resolve) => setTimeout(resolve, 2200));
       let savedUser: api.AppUser | null = null;

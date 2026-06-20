@@ -105,6 +105,16 @@ export async function logout() {
   await setAuthToken(null);
 }
 
+// 백엔드 깨우기(warmup): 무료 서버가 잠들어 있으면 미리 깨워 둡니다.
+// 앱을 켤 때 호출해 두면, 분석할 때쯤엔 서버가 깨어 있어 콜드스타트(첫 요청 지연)를 피합니다.
+export async function warmupBackend() {
+  try {
+    await fetch(`${BACKEND_URL}/`);
+  } catch {
+    // 실패해도 무시(분석 시 재시도가 처리)
+  }
+}
+
 // 백엔드 서버가 켜져 있고 정상적으로 응답하는지 확인하는 함수입니다.
 // 서버가 응답하면 true, 그렇지 않으면 false를 돌려줍니다.
 export async function checkConnection(): Promise<boolean> {
@@ -232,13 +242,30 @@ export async function saveScan(
   landmarks?: LandmarkPoint[];
   record?: ScanRecord;
 }> {
-  const formData = await buildImageFormData(uri);
-  const response = await fetch(`${BACKEND_URL}/history/scan`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: formData,
-  });
-  return response.json();
+  // 서버가 잠들어 있을 수 있어, 실패하거나 서버 오류(5xx)면 잠시 후 자동으로 다시 시도합니다.
+  // (콜드스타트: 무료 서버가 깨어나는 데 시간이 걸려 첫 요청이 실패하는 문제 대비)
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const formData = await buildImageFormData(uri);
+      const response = await fetch(`${BACKEND_URL}/history/scan`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: formData,
+      });
+      // 서버가 깨는 중이면 5xx가 올 수 있음 → 재시도
+      if (response.status >= 500) {
+        lastError = new Error(`서버 준비 중(${response.status})`);
+      } else {
+        return response.json();
+      }
+    } catch (e) {
+      lastError = e; // 네트워크 실패(서버 미응답) → 재시도
+    }
+    // 다음 시도 전 대기 (서버가 깨어날 시간)
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+  }
+  throw lastError ?? new Error('서버에 연결하지 못했습니다.');
 }
 
 // 저장된 모든 이력을 최신순으로 가져오는 함수입니다.
