@@ -115,6 +115,21 @@ export async function warmupBackend() {
   }
 }
 
+// 서버가 깨어날 때까지 기다립니다(콜드스타트 대비). 최대 약 70초.
+// 무료 서버는 잠들어 있으면 깨어나는 데 30초~1분이 걸려, 사진을 보내기 전에 먼저 깨워 둡니다.
+async function waitForBackendReady(): Promise<void> {
+  for (let i = 0; i < 14; i++) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/`);
+      if (res.ok) return; // 서버가 깨어남 → 바로 진행
+    } catch {
+      // 아직 안 깨어남 → 잠시 후 다시 확인
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  // 끝까지 못 깨워도 업로드는 한 번 시도해 봅니다(throw하지 않음).
+}
+
 // 백엔드 서버가 켜져 있고 정상적으로 응답하는지 확인하는 함수입니다.
 // 서버가 응답하면 true, 그렇지 않으면 false를 돌려줍니다.
 export async function checkConnection(): Promise<boolean> {
@@ -242,9 +257,13 @@ export async function saveScan(
   landmarks?: LandmarkPoint[];
   record?: ScanRecord;
 }> {
+  // 먼저 서버가 깨어날 때까지 기다립니다(콜드스타트 대비, 최대 약 70초).
+  await waitForBackendReady();
+
   // 서버가 잠들어 있을 수 있어, 실패하거나 서버 오류(5xx)면 잠시 후 자동으로 다시 시도합니다.
   // (콜드스타트: 무료 서버가 깨어나는 데 시간이 걸려 첫 요청이 실패하는 문제 대비)
-  let lastError: unknown = null;
+  // 실패 시 "왜 실패했는지"를 자세히 기록해, 화면에서 진짜 원인을 확인할 수 있게 합니다.
+  let lastDetail = '원인 미상';
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       const formData = await buildImageFormData(uri);
@@ -255,17 +274,19 @@ export async function saveScan(
       });
       // 서버가 깨는 중이면 5xx가 올 수 있음 → 재시도
       if (response.status >= 500) {
-        lastError = new Error(`서버 준비 중(${response.status})`);
+        lastDetail = `서버 응답 ${response.status} (준비 중)`;
       } else {
         return response.json();
       }
-    } catch (e) {
-      lastError = e; // 네트워크 실패(서버 미응답) → 재시도
+    } catch (e: any) {
+      // 네트워크 실패(서버 미응답·파일 전송 실패 등) → 재시도. 실제 메시지를 보관.
+      lastDetail = `네트워크 오류: ${e?.message ?? String(e)}`;
     }
     // 다음 시도 전 대기 (서버가 깨어날 시간)
     await new Promise((resolve) => setTimeout(resolve, 4000));
   }
-  throw lastError ?? new Error('서버에 연결하지 못했습니다.');
+  // 5번 모두 실패 → 마지막 실패 이유를 그대로 알려줍니다(진단용).
+  throw new Error(`5회 재시도 실패 — ${lastDetail}`);
 }
 
 // 저장된 모든 이력을 최신순으로 가져오는 함수입니다.

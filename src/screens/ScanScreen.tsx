@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import Text from '../components/AppText';
 import Face3DViewer from '../components/Face3DViewer';
-import { saveScan, FaceScore, LandmarkPoint, submitFeedback } from '../api';
+import { saveScan, FaceScore, LandmarkPoint, submitFeedback, BACKEND_URL } from '../api';
 import { colors, radius } from '../theme';
 
 // 추천할 괄사 디바이스 이미지들 (assets/products 폴더의 실제 이미지)
@@ -138,10 +138,12 @@ export default function ScanScreen() {
         setStatus('error');
         setMessage(data.message || '얼굴을 분석하지 못했습니다.');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.log('분석/저장 실패:', e);
       setStatus('error');
-      setMessage('백엔드 서버에 연결하지 못했습니다. 서버가 켜져 있는지 확인해 주세요.');
+      // 진짜 실패 이유를 그대로 보여줍니다(원인 진단용).
+      const detail = e?.message ?? String(e);
+      setMessage(`백엔드 연결/전송 실패\n${detail}\n\n서버: ${BACKEND_URL}`);
     }
   }
 
