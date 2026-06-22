@@ -166,18 +166,57 @@ export default function ScanScreen() {
   const isAnalyzing = status === 'analyzing';
   const showLandmarks = status === 'done' && landmarks && imageSize;
 
-  // 사진의 가로세로 비율에 맞춰 표시 크기를 계산합니다(점 위치를 정확히 맞추기 위해).
-  let dispW = BOX_W;
-  let dispH = BOX_W;
-  if (imageSize) {
-    const ratio = imageSize.height / imageSize.width;
-    if (BOX_W * ratio <= MAX_H) {
-      dispW = BOX_W;
-      dispH = Math.round(BOX_W * ratio);
-    } else {
-      dispH = MAX_H;
-      dispW = Math.round(MAX_H / ratio);
+  // 분석이 끝나면 사진 전체가 아니라 "얼굴 부분만" 잘라서 보여줍니다.
+  // 검출한 특징점들의 경계로 얼굴 영역을 구한 뒤, 그 부분만 확대해 표시합니다.
+  let crop:
+    | null
+    | {
+        boxW: number; // 화면에 보일 박스 너비
+        boxH: number; // 화면에 보일 박스 높이
+        imgW: number; // 그 안에서 확대된 사진 전체 너비
+        imgH: number; // 확대된 사진 전체 높이
+        offX: number; // 사진을 왼쪽으로 미는 값(얼굴이 보이도록)
+        offY: number; // 사진을 위로 미는 값
+        minX: number; // 얼굴 영역 시작 X(점 위치 보정용)
+        minY: number; // 얼굴 영역 시작 Y
+      } = null;
+  if (showLandmarks && landmarks && imageSize) {
+    // 특징점들의 최소/최대 좌표(0~1)로 얼굴 경계를 구합니다.
+    let minX = 1;
+    let minY = 1;
+    let maxX = 0;
+    let maxY = 0;
+    for (const p of landmarks) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
     }
+    // 얼굴 주변에 약간의 여유(여백)를 둬서 너무 빡빡하지 않게 합니다.
+    const padX = (maxX - minX) * 0.15;
+    const padY = (maxY - minY) * 0.15;
+    minX = Math.max(0, minX - padX);
+    maxX = Math.min(1, maxX + padX);
+    minY = Math.max(0, minY - padY);
+    maxY = Math.min(1, maxY + padY);
+
+    const fw = maxX - minX; // 얼굴 영역 너비(비율)
+    const fh = maxY - minY; // 얼굴 영역 높이(비율)
+    const imgRatio = imageSize.height / imageSize.width;
+
+    let boxW = BOX_W;
+    let imgW = boxW / fw; // 사진을 이만큼 확대하면 얼굴 너비가 박스 너비가 됨
+    let imgH = imgW * imgRatio;
+    let boxH = fh * imgH; // 박스 높이는 얼굴 영역 높이만큼만
+    // 너무 길면 비율을 유지한 채 전체를 줄입니다.
+    if (boxH > MAX_H) {
+      const f = MAX_H / boxH;
+      boxW *= f;
+      boxH *= f;
+      imgW *= f;
+      imgH *= f;
+    }
+    crop = { boxW, boxH, imgW, imgH, offX: -minX * imgW, offY: -minY * imgH, minX, minY };
   }
 
   return (
@@ -187,14 +226,27 @@ export default function ScanScreen() {
       </View>
 
       <View style={styles.center}>
-        {showLandmarks ? (
-          // 분석 완료: 사진을 비율에 맞춰 표시하고 그 위에 점 478개를 찍습니다.
-          <View style={[styles.landmarkBox, { width: dispW, height: dispH }]}>
-            <Image source={{ uri: imageUri! }} style={styles.fill} resizeMode="cover" />
+        {showLandmarks && crop ? (
+          // 분석 완료: 얼굴 부분만 잘라 확대해 표시하고 그 위에 점 478개를 찍습니다.
+          <View style={[styles.landmarkBox, { width: crop.boxW, height: crop.boxH }]}>
+            <Image
+              source={{ uri: imageUri! }}
+              style={{
+                position: 'absolute',
+                width: crop.imgW,
+                height: crop.imgH,
+                left: crop.offX,
+                top: crop.offY,
+              }}
+              resizeMode="cover"
+            />
             {landmarks!.map((p, i) => (
               <View
                 key={i}
-                style={[styles.dot, { left: p.x * dispW - 1, top: p.y * dispH - 1 }]}
+                style={[
+                  styles.dot,
+                  { left: (p.x - crop!.minX) * crop!.imgW - 1, top: (p.y - crop!.minY) * crop!.imgH - 1 },
+                ]}
               />
             ))}
             <Text style={styles.dotCaption}>특징점 {landmarks!.length}개</Text>
