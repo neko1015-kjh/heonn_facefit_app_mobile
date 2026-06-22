@@ -3,6 +3,9 @@
 
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// 휴대폰(iOS/Android)에서 사진 파일을 안정적으로 업로드하기 위한 Expo 공식 도구입니다.
+// (최신 React Native에서는 fetch + FormData로 파일을 올리는 방식이 더 이상 동작하지 않아 이걸로 교체)
+import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 
 // 백엔드 서버 주소입니다.
 //
@@ -156,29 +159,9 @@ export type LandmarkResult = {
 // 선택한 사진을 백엔드로 보내 얼굴 랜드마크(특징점)를 분석받는 함수입니다.
 // uri: 사진의 위치(앱에서 사진을 고르면 받는 값)
 export async function sendImageForLandmarks(uri: string): Promise<LandmarkResult> {
-  // 서버에 파일을 보내기 위한 데이터 묶음을 만듭니다.
-  const formData = new FormData();
-
-  if (Platform.OS === 'web') {
-    // 웹에서는 사진 주소를 실제 파일 데이터(Blob)로 바꿔서 담습니다.
-    const res = await fetch(uri);
-    const blob = await res.blob();
-    formData.append('file', blob, 'photo.jpg');
-  } else {
-    // 휴대폰(iOS/Android)에서는 파일 정보를 형태에 맞춰 담습니다.
-    formData.append('file', {
-      uri,
-      name: 'photo.jpg',
-      type: 'image/jpeg',
-    } as any);
-  }
-
   // 백엔드의 얼굴 분석 주소로 사진을 전송하고, 결과(JSON)를 돌려받습니다.
-  const response = await fetch(`${BACKEND_URL}/scan/landmarks`, {
-    method: 'POST',
-    body: formData,
-  });
-  return response.json();
+  const { json } = await uploadImageFile('/scan/landmarks', uri);
+  return json;
 }
 
 // 얼굴 점수 하나의 형태입니다. (예: 안면 비대칭 개선도 95점)
@@ -199,25 +182,8 @@ export type AnalyzeResult = {
 // 사진을 보내 진짜 점수(비대칭/좌우 균형)를 받는 함수입니다.
 // 사진을 파일로 만드는 방식은 위 sendImageForLandmarks와 동일합니다.
 export async function analyzeFaceScores(uri: string): Promise<AnalyzeResult> {
-  const formData = new FormData();
-
-  if (Platform.OS === 'web') {
-    const res = await fetch(uri);
-    const blob = await res.blob();
-    formData.append('file', blob, 'photo.jpg');
-  } else {
-    formData.append('file', {
-      uri,
-      name: 'photo.jpg',
-      type: 'image/jpeg',
-    } as any);
-  }
-
-  const response = await fetch(`${BACKEND_URL}/scan/analyze`, {
-    method: 'POST',
-    body: formData,
-  });
-  return response.json();
+  const { json } = await uploadImageFile('/scan/analyze', uri);
+  return json;
 }
 
 // 저장된 이력(기록) 한 건의 형태입니다.
@@ -230,17 +196,43 @@ export type ScanRecord = {
   signature?: number[]; // 동일인 판별용 얼굴 서명(특징 벡터)
 };
 
-// 사진을 보내 파일 데이터를 FormData에 담는 공통 처리입니다.
-async function buildImageFormData(uri: string): Promise<FormData> {
-  const formData = new FormData();
+// 사진 파일을 백엔드의 지정한 주소로 업로드하는 공통 함수입니다.
+// 플랫폼별로 가장 안정적인 방식을 사용합니다:
+//  - 웹: fetch + FormData(Blob)
+//  - 휴대폰: Expo 공식 uploadAsync(멀티파트) — 최신 RN에서 표준 방식
+// 반환값: { status: HTTP 상태코드, json: 파싱된 응답(JSON) | null }
+async function uploadImageFile(
+  endpoint: string,
+  uri: string
+): Promise<{ status: number; json: any }> {
   if (Platform.OS === 'web') {
     const res = await fetch(uri);
     const blob = await res.blob();
+    const formData = new FormData();
     formData.append('file', blob, 'photo.jpg');
-  } else {
-    formData.append('file', { uri, name: 'photo.jpg', type: 'image/jpeg' } as any);
+    const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: formData,
+    });
+    const json = await response.json().catch(() => null);
+    return { status: response.status, json };
   }
-  return formData;
+  // 휴대폰: 사진 파일(uri)을 멀티파트로 직접 업로드합니다.
+  const result = await uploadAsync(`${BACKEND_URL}${endpoint}`, uri, {
+    httpMethod: 'POST',
+    uploadType: FileSystemUploadType.MULTIPART,
+    fieldName: 'file', // 백엔드가 받는 필드 이름
+    mimeType: 'image/jpeg',
+    headers: authHeaders(), // 로그인 토큰 등
+  });
+  let json: any = null;
+  try {
+    json = JSON.parse(result.body);
+  } catch {
+    json = null; // 응답이 JSON이 아니면 null
+  }
+  return { status: result.status, json };
 }
 
 // 얼굴 점 하나의 좌표입니다. x, y는 0~1 비율, z는 상대 깊이(간이 3D 표시용).
@@ -266,17 +258,14 @@ export async function saveScan(
   let lastDetail = '원인 미상';
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const formData = await buildImageFormData(uri);
-      const response = await fetch(`${BACKEND_URL}/history/scan`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: formData,
-      });
+      const { status, json } = await uploadImageFile('/history/scan', uri);
       // 서버가 깨는 중이면 5xx가 올 수 있음 → 재시도
-      if (response.status >= 500) {
-        lastDetail = `서버 응답 ${response.status} (준비 중)`;
+      if (status >= 500) {
+        lastDetail = `서버 응답 ${status} (준비 중)`;
+      } else if (json == null) {
+        lastDetail = `서버 응답 해석 실패 (status ${status})`;
       } else {
-        return response.json();
+        return json;
       }
     } catch (e: any) {
       // 네트워크 실패(서버 미응답·파일 전송 실패 등) → 재시도. 실제 메시지를 보관.
