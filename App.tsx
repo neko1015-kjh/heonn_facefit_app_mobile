@@ -115,28 +115,49 @@ export default function App() {
 
   // 로그인 버튼을 눌렀을 때: 서버에 로그인 요청 → 성공하면 페어링 화면으로 이동
   // remember: 자동 로그인 체크 여부(끄면 다음 실행에 자동 로그인 안 함)
+  // 로그인 성공 후 다음 화면으로: 동의 전이면 동의, 동의했으면 페어링으로
+  function routeAfterLogin(u: api.AppUser) {
+    setUser(u);
+    if (!u.consented) {
+      setAppState('consent');
+      return;
+    }
+    setAppState('pairing');
+    setPairingState('searching');
+    setTimeout(() => setPairingState('found'), 2000);
+  }
+
   async function handleLogin(provider: string, remember: boolean) {
     console.log(`${provider} 로그인 시도 (자동 로그인: ${remember})`);
 
-    // 카카오·구글은 실제 OAuth — 웹에서는 해당 인증 페이지로 이동합니다.
-    // (인증 후 백엔드 콜백을 거쳐 ?token= 을 달고 이 웹으로 돌아옵니다)
-    if ((provider === '카카오' || provider === '구글') && Platform.OS === 'web') {
-      const path = provider === '카카오' ? 'kakao' : 'google';
-      window.location.href = `${api.BACKEND_URL}/auth/${path}/login`;
+    // ── 카카오: 진짜 OAuth ──
+    // 웹은 인증 페이지로 이동, 휴대폰(앱)은 인앱 브라우저로 카카오 인증 후 앱으로 복귀.
+    if (provider === '카카오') {
+      if (Platform.OS === 'web') {
+        window.location.href = `${api.BACKEND_URL}/auth/kakao/login`;
+        return;
+      }
+      try {
+        const u = await api.loginWithKakaoNative(remember);
+        if (!u) return; // 사용자가 취소하거나 인증 실패 → 조용히 종료
+        routeAfterLogin(u);
+      } catch (e) {
+        console.log('카카오 로그인 실패:', e);
+        alert('카카오 로그인 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.');
+      }
       return;
     }
 
+    // ── 구글: 웹에서만 실제 OAuth(네이티브 구글은 추후) ──
+    if (provider === '구글' && Platform.OS === 'web') {
+      window.location.href = `${api.BACKEND_URL}/auth/google/login`;
+      return;
+    }
+
+    // ── 그 외(네이버·게스트 등): 기본 로그인 ──
     try {
       const loggedIn = await api.login(provider, remember);
-      setUser(loggedIn);
-      // 아직 동의 전이면 동의 화면부터, 동의돼 있으면 페어링으로
-      if (!loggedIn.consented) {
-        setAppState('consent');
-        return;
-      }
-      setAppState('pairing');
-      setPairingState('searching');
-      setTimeout(() => setPairingState('found'), 2000);
+      routeAfterLogin(loggedIn);
     } catch (e) {
       // 서버가 꺼져 있거나 연결이 안 될 때 여기로 옵니다.
       console.log('로그인 실패:', e);

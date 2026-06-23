@@ -6,6 +6,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // 휴대폰(iOS/Android)에서 사진 파일을 안정적으로 업로드하기 위한 Expo 공식 도구입니다.
 // (최신 React Native에서는 fetch + FormData로 파일을 올리는 방식이 더 이상 동작하지 않아 이걸로 교체)
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
+// 휴대폰에서 카카오 인증 창을 띄우고 결과(앱으로 복귀한 주소)를 받기 위한 Expo 공식 도구입니다.
+import * as WebBrowser from 'expo-web-browser';
+
+// 인증 후 브라우저 세션을 깔끔히 마무리(주로 웹에서 필요).
+WebBrowser.maybeCompleteAuthSession();
 
 // 백엔드 서버 주소입니다.
 //
@@ -81,14 +86,44 @@ export type AppUser = { id: number; provider: string; display_name: string; cons
 // 소셜 버튼으로 로그인 → 토큰 발급 후 저장.
 // remember=true면 기기에 저장(다음에 자동 로그인), false면 이번만 로그인.
 export async function login(provider: string, remember = true): Promise<AppUser> {
-  const res = await fetch(`${BACKEND_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider }),
-  });
-  const data = await res.json();
-  await setAuthToken(data.token, remember);
-  return data.user;
+  // 서버가 잠들어 있을 수 있어 먼저 깨우고, 일시적 실패면 자동 재시도합니다(콜드스타트 대비).
+  await waitForBackendReady();
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      });
+      if (res.status >= 500) {
+        lastErr = new Error(`서버 준비 중(${res.status})`);
+      } else {
+        const data = await res.json();
+        await setAuthToken(data.token, remember);
+        return data.user;
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw lastErr ?? new Error('로그인 실패');
+}
+
+// 휴대폰(네이티브)에서 진짜 카카오 로그인을 합니다.
+// 인앱 브라우저로 카카오 인증 → 백엔드가 앱(facefit://auth?token=)으로 돌려보내면 토큰을 꺼내 로그인.
+// 성공 시 사용자, 사용자가 취소하면 null.
+export async function loginWithKakaoNative(remember = true): Promise<AppUser | null> {
+  await waitForBackendReady(); // 콜드스타트면 미리 깨움(카카오 콜백이 서버를 호출하므로)
+  const authUrl = `${BACKEND_URL}/auth/kakao/login?state=native`;
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, 'facefit://auth');
+  if (result.type !== 'success' || !result.url) return null; // 취소/닫음
+  const m = result.url.match(/[?&]token=([^&]+)/);
+  if (!m) return null; // 로그인 실패(에러로 복귀)
+  const token = decodeURIComponent(m[1]);
+  await setAuthToken(token, remember);
+  return await fetchMe();
 }
 
 // 저장된 토큰으로 로그인 상태 확인(자동 로그인). 유효하면 사용자, 아니면 null.

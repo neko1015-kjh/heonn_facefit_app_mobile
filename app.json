@@ -3,6 +3,7 @@
     "name": "FaceFit",
     "slug": "facefit",
     "version": "1.0.0",
+    "scheme": "facefit",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,7 +12,7 @@
     },
     "android": {
       "package": "com.heonn.facefit",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "backgroundColor": "#D8AE58",
         "foregroundImage": "./assets/android-icon-foreground.png"
@@ -26,6 +27,9 @@
         "projectId": "1313a13c-b9e0-4a04-be19-54cd5f227dea"
       }
     },
-    "owner": "neko1015"
+    "owner": "neko1015",
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }
