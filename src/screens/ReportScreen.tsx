@@ -19,7 +19,7 @@ import { colors, radius } from '../theme';
 const TABS = ['주간', '월간', '누적'];
 
 // 현재 앱 빌드 번호(설치된 버전 확인용). app.json의 versionCode와 같게 유지합니다.
-const APP_BUILD = 8;
+const APP_BUILD = 9;
 
 // 서버 기준 상대 경로를 전체 사진 주소로 바꿉니다.
 function fullImageUrl(path: string) {

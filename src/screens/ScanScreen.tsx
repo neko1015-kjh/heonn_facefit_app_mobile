@@ -228,7 +228,11 @@ export default function ScanScreen() {
         <Text style={styles.headerText}>AI 정밀 안면 스캔</Text>
       </View>
 
-      <View style={styles.center}>
+      <ScrollView
+        style={styles.center}
+        contentContainerStyle={styles.centerContent}
+        showsVerticalScrollIndicator={false}
+      >
         {showLandmarks && crop ? (
           // 분석 완료: 얼굴 부분만 잘라 확대해 표시하고 그 위에 점 478개를 찍습니다.
           <View style={[styles.landmarkBox, { width: crop.boxW, height: crop.boxH }]}>
@@ -346,7 +350,7 @@ export default function ScanScreen() {
             <Text style={styles.resultSub}>{message}</Text>
           </View>
         )}
-      </View>
+      </ScrollView>
 
       {/* 하단 버튼: 카메라 촬영 / 갤러리 선택 */}
       <View style={styles.footer}>
@@ -505,9 +509,15 @@ const styles = StyleSheet.create({
   },
   center: {
     flex: 1,
+  },
+  // 결과가 길어져도 화면을 넘치지 않게 스크롤되도록 합니다.
+  // (내용이 짧으면 가운데 정렬, 길면 위에서부터 스크롤)
+  centerContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+    paddingVertical: 20,
   },
   scanBox: {
     width: 300,
