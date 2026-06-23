@@ -18,6 +18,9 @@ import { colors, radius } from '../theme';
 // AI 스캔 탭에서 분석·저장한 기록을 모아, Before/After 비교와 점수 변화를 보여줍니다.
 const TABS = ['주간', '월간', '누적'];
 
+// 현재 앱 빌드 번호(설치된 버전 확인용). app.json의 versionCode와 같게 유지합니다.
+const APP_BUILD = 8;
+
 // 서버 기준 상대 경로를 전체 사진 주소로 바꿉니다.
 function fullImageUrl(path: string) {
   return `${BACKEND_URL}${path}`;
@@ -227,6 +230,7 @@ export default function ReportScreen() {
       showsVerticalScrollIndicator={false}
     >
       <Text style={styles.title}>AI 변화 리포트</Text>
+      <Text style={styles.buildTag}>앱 빌드 v{APP_BUILD}</Text>
 
       {/* 기간 선택 탭 */}
       <View style={styles.tabBar}>
@@ -781,7 +785,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 6,
+  },
+  buildTag: {
+    color: colors.textFainter,
+    fontSize: 11,
+    textAlign: 'center',
+    marginBottom: 20,
   },
   tabBar: {
     flexDirection: 'row',
