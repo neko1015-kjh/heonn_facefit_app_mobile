@@ -1,0 +1,14 @@
+{
+  // node_modules는 외부 라이브러리 폴더라 우리가 건드리지 않습니다.
+  // 라이브러리 내부 설정 파일에서 나는 경고가 '문제' 탭에 뜨지 않도록 편집기에서 숨깁니다.
+  // (앱 동작과 무관한 잡음 제거 — 우리 코드/빌드에는 영향 없음)
+  "files.exclude": {
+    "**/node_modules": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true
+  }
+}

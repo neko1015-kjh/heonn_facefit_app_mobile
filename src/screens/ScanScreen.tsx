@@ -42,6 +42,7 @@ export default function ScanScreen() {
   const [landmarks, setLandmarks] = useState<LandmarkPoint[] | null>(null); // 점 좌표(0~1)
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [scores, setScores] = useState<FaceScore[] | null>(null); // 계산된 점수
+  const [age, setAge] = useState<string>(''); // 추정 나이대(참고용)
   const [message, setMessage] = useState(''); // 안내/오류 문구
   const [showGuasha, setShowGuasha] = useState(false); // 괄사 추천 팝업 열림 여부
   const [galleryWidth, setGalleryWidth] = useState(280); // 이미지 갤러리 한 장 너비
@@ -108,6 +109,7 @@ export default function ScanScreen() {
     setScores(null);
     setLandmarks(null);
     setImageSize(null);
+    setAge('');
     setMessage('');
     setFeedbackDone(false); // 새 분석이므로 만족도 평가를 다시 받습니다.
     setStatus('analyzing');
@@ -118,6 +120,7 @@ export default function ScanScreen() {
       const [data] = await Promise.all([saveScan(uri), minDelay]);
       if (data.detected && data.record) {
         setScores(data.record.scores);
+        setAge(data.record.age ?? data.age ?? '');
         setLandmarks(data.landmarks ?? null);
         setImageSize(data.image_size ?? null);
         setStatus('done');
@@ -292,6 +295,17 @@ export default function ScanScreen() {
                 </View>
               ))}
             </View>
+
+            {/* 추정 나이대(참고용) */}
+            {age ? (
+              <View style={styles.ageRow}>
+                <Feather name="user" size={14} color={colors.textMuted} />
+                <Text style={styles.ageText}>
+                  추정 나이대 <Text style={styles.ageValue}>{age}</Text>
+                  <Text style={styles.ageNote}> · 참고용</Text>
+                </Text>
+              </View>
+            ) : null}
             {landmarks && landmarks.length > 0 && (
               <Pressable style={styles.view3dButton} onPress={() => setShow3D(true)}>
                 <Feather name="box" size={16} color={colors.amber400} />
@@ -629,6 +643,24 @@ const styles = StyleSheet.create({
     color: colors.amber400,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  ageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+  },
+  ageText: {
+    color: colors.textMuted,
+    fontSize: 13,
+  },
+  ageValue: {
+    color: colors.text,
+    fontWeight: '700',
+  },
+  ageNote: {
+    color: colors.textFaint,
+    fontSize: 11,
   },
   hintText: {
     color: colors.textFaint,

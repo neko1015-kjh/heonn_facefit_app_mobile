@@ -194,6 +194,7 @@ export type ScanRecord = {
   scores: FaceScore[]; // 그때의 점수들
   care_side?: string; // 케어가 더 필요한 쪽('오른쪽'/'왼쪽')
   signature?: number[]; // 동일인 판별용 얼굴 서명(특징 벡터)
+  age?: string; // 추정 나이대(참고용, 예: '25-32세')
 };
 
 // 사진 파일을 백엔드의 지정한 주소로 업로드하는 공통 함수입니다.
@@ -247,6 +248,7 @@ export async function saveScan(
   landmark_count?: number;
   image_size?: { width: number; height: number };
   landmarks?: LandmarkPoint[];
+  age?: string;
   record?: ScanRecord;
 }> {
   // 먼저 서버가 깨어날 때까지 기다립니다(콜드스타트 대비, 최대 약 70초).
