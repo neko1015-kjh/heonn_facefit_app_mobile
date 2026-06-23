@@ -10,6 +10,7 @@ import BottomNav, { TabKey } from './src/components/BottomNav';
 import { colors } from './src/theme';
 import IntroScreen from './src/screens/IntroScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import ConsentScreen from './src/screens/ConsentScreen';
 import PairingScreen from './src/screens/PairingScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ScanScreen from './src/screens/ScanScreen';
@@ -17,8 +18,8 @@ import CareScreen from './src/screens/CareScreen';
 import ReportScreen from './src/screens/ReportScreen';
 import StoreScreen from './src/screens/StoreScreen';
 
-// 앱 전체 단계: 'intro'(인트로) → 'login'(로그인) → 'pairing'(기기 연결) → 'main'(메인 앱)
-type AppState = 'intro' | 'login' | 'pairing' | 'main';
+// 앱 전체 단계: 'intro' → 'login' → 'consent'(약관 동의) → 'pairing'(기기 연결) → 'main'
+type AppState = 'intro' | 'login' | 'consent' | 'pairing' | 'main';
 // 페어링 단계: 'searching'(검색) → 'found'(발견) → 'connecting'(동기화 중) → 'connected'(연결됨)
 type PairingState = 'searching' | 'found' | 'connecting' | 'connected';
 
@@ -76,12 +77,15 @@ export default function App() {
 
       if (savedUser) {
         setUser(savedUser);
-        if (paired) {
-          // 로그인 + 기기 연결 기억 → 바로 홈
+        if (!savedUser.consented) {
+          // 아직 약관·개인정보 동의를 안 했으면 동의 화면부터
+          setAppState('consent');
+        } else if (paired) {
+          // 로그인 + 동의 + 기기 연결 기억 → 바로 홈
           setActiveTab('home');
           setAppState('main');
         } else {
-          // 로그인됐지만 기기 연결 전 → 페어링
+          // 로그인·동의됐지만 기기 연결 전 → 페어링
           setAppState('pairing');
           setPairingState('searching');
           setTimeout(() => setPairingState('found'), 2000);
@@ -125,6 +129,11 @@ export default function App() {
     try {
       const loggedIn = await api.login(provider, remember);
       setUser(loggedIn);
+      // 아직 동의 전이면 동의 화면부터, 동의돼 있으면 페어링으로
+      if (!loggedIn.consented) {
+        setAppState('consent');
+        return;
+      }
       setAppState('pairing');
       setPairingState('searching');
       setTimeout(() => setPairingState('found'), 2000);
@@ -132,6 +141,22 @@ export default function App() {
       // 서버가 꺼져 있거나 연결이 안 될 때 여기로 옵니다.
       console.log('로그인 실패:', e);
       alert('서버에 연결할 수 없어 로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+  }
+
+  // 약관·개인정보 동의 완료: 서버에 기록하고 다음 단계로 진행합니다.
+  async function handleConsentDone(marketing: boolean) {
+    await api.submitConsent(marketing);
+    setUser((u) => (u ? { ...u, consented: true } : u));
+    // 기기 연결을 이미 기억하고 있으면 바로 홈, 아니면 페어링으로
+    const paired = await api.loadPaired();
+    if (paired) {
+      setActiveTab('home');
+      setAppState('main');
+    } else {
+      setAppState('pairing');
+      setPairingState('searching');
+      setTimeout(() => setPairingState('found'), 2000);
     }
   }
 
@@ -163,6 +188,8 @@ export default function App() {
         {appState === 'intro' && <IntroScreen />}
 
         {appState === 'login' && <LoginScreen onLogin={handleLogin} />}
+
+        {appState === 'consent' && <ConsentScreen onAgree={handleConsentDone} />}
 
         {appState === 'pairing' && (
           <PairingScreen pairingState={pairingState} onConnect={handleConnect} />

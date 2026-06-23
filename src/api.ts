@@ -76,7 +76,7 @@ export async function setPaired(value: boolean) {
 }
 
 // 로그인한 사용자 정보
-export type AppUser = { id: number; provider: string; display_name: string };
+export type AppUser = { id: number; provider: string; display_name: string; consented?: boolean };
 
 // 소셜 버튼으로 로그인 → 토큰 발급 후 저장.
 // remember=true면 기기에 저장(다음에 자동 로그인), false면 이번만 로그인.
@@ -106,6 +106,23 @@ export async function fetchMe(): Promise<AppUser | null> {
 // 로그아웃: 토큰 삭제.
 export async function logout() {
   await setAuthToken(null);
+}
+
+// 약관·개인정보(얼굴 포함) 동의를 서버에 기록합니다. (로그인 후 동의 화면에서 호출)
+// marketing: 마케팅 수신 동의(선택) 여부
+export async function submitConsent(marketing: boolean): Promise<boolean> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/auth/consent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ marketing }),
+    });
+    const data = await res.json();
+    return !!data.ok;
+  } catch (e) {
+    console.log('동의 기록 실패:', e);
+    return false;
+  }
 }
 
 // 백엔드 깨우기(warmup): 무료 서버가 잠들어 있으면 미리 깨워 둡니다.
