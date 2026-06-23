@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import Text from '../components/AppText';
-import { BACKEND_URL, getHistory, FaceScore, ScanRecord } from '../api';
+import { BACKEND_URL, getHistory, getScanLandmarks, FaceScore, ScanRecord, LandmarkPoint } from '../api';
 import { colors, radius } from '../theme';
 
 // [6] AI 변화 리포트 화면입니다.
@@ -51,6 +51,34 @@ function predictScores(scores: FaceScore[]) {
   });
 }
 
+// 점수 항목별로 "얼굴 어디를 보고 계산했는지"를 정의합니다.
+// points: 강조해서 찍을 특징점 번호들 / pairs: 좌우로 이어 보여줄 짝 / midline: 중앙 기준선 표시 여부
+const SCORE_DETAIL: Record<
+  string,
+  { desc: string; points: number[]; pairs?: [number, number][]; midline?: boolean }
+> = {
+  symmetry: {
+    desc: '좌우 짝이 되는 눈·눈썹·입꼬리·코·볼의 위치가 중앙선을 기준으로 얼마나 대칭인지 봅니다. 양쪽(초록 선) 점이 대칭일수록 점수가 높아요.',
+    points: [33, 263, 133, 362, 61, 291, 105, 334, 129, 358, 50, 280],
+    pairs: [[33, 263], [133, 362], [61, 291], [105, 334], [129, 358], [50, 280]],
+    midline: true,
+  },
+  balance: {
+    desc: '얼굴 중앙선에서 왼쪽·오른쪽 끝(볼)까지의 폭을 비교해 한쪽이 부었는지 봅니다. 양쪽 폭(초록 선)이 비슷할수록 점수가 높아요.',
+    points: [234, 454, 10, 152],
+    pairs: [[234, 454]],
+    midline: true,
+  },
+  dark_circle: {
+    desc: '눈 아래(노란 점)와 볼(주황 점)의 밝기를 비교합니다. 눈 밑이 볼보다 어두울수록 다크서클로 보고 점수가 낮아져요.',
+    points: [145, 374, 50, 280],
+  },
+  wrinkle: {
+    desc: '이마·미간·눈가·팔자(노란 점) 부위의 잔주름(결)을 매끈한 볼과 비교합니다. 결이 많을수록 점수가 낮아져요.',
+    points: [151, 9, 33, 263, 205, 425],
+  },
+};
+
 // 같은 사람으로 볼 수 있는 얼굴 서명 거리 한계값. (이보다 크면 다른 사람으로 판단)
 const SIG_THRESHOLD = 0.2;
 
@@ -77,10 +105,39 @@ export default function ReportScreen() {
   const [imgRatio, setImgRatio] = useState<number | null>(null); // 사진 세로/가로 비율
   const [baseline, setBaseline] = useState<'latest' | 'previous' | null>(null); // 다른 사람일 때 기준 선택
 
+  // ── 점수 상세(분석 부위 표시) 팝업 상태 ──
+  const [detailScore, setDetailScore] = useState<FaceScore | null>(null); // 상세 보기 중인 점수
+  const [detailLandmarks, setDetailLandmarks] = useState<LandmarkPoint[] | null>(null); // 그 사진의 얼굴 점
+  const [detailLoading, setDetailLoading] = useState(false); // 점 불러오는 중
+  const [detailBoxW, setDetailBoxW] = useState(0); // 상세 사진 영역 너비
+  const [detailRatio, setDetailRatio] = useState<number | null>(null); // 상세 사진 세로/가로 비율
+
   // 화면이 열릴 때마다 이력을 불러옵니다.
   useEffect(() => {
     loadHistory();
   }, []);
+
+  // 점수 카드를 누르면 그 사진의 얼굴 점을 받아와 분석 부위를 표시합니다.
+  async function openDetail(score: FaceScore) {
+    if (!newest) return; // 실제 기록이 있을 때만
+    setDetailScore(score);
+    setDetailLandmarks(null);
+    setDetailRatio(null);
+    setDetailLoading(true);
+    try {
+      const res = await getScanLandmarks(newest.id);
+      setDetailLandmarks(res.detected ? res.landmarks ?? null : null);
+    } catch (e) {
+      console.log('상세 부위 불러오기 실패:', e);
+      setDetailLandmarks(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+  function closeDetail() {
+    setDetailScore(null);
+    setDetailLandmarks(null);
+  }
 
   async function loadHistory() {
     setRefreshing(true);
@@ -338,8 +395,15 @@ export default function ReportScreen() {
           // 직전 기록에서 같은 항목의 점수를 찾아 변화량을 계산합니다.
           const prevScore = previous?.scores.find((s) => s.key === score.key);
           const delta = prevScore ? score.value - prevScore.value : null;
+          // 분석 부위 정보가 있고 실제 기록일 때만 눌러서 상세를 볼 수 있습니다.
+          const canDetail = !!newest && !!SCORE_DETAIL[score.key];
           return (
-            <View key={score.label} style={styles.scoreCard}>
+            <Pressable
+              key={score.label}
+              style={[styles.scoreCard, canDetail && styles.scoreCardTappable]}
+              onPress={() => canDetail && openDetail(score)}
+              disabled={!canDetail}
+            >
               <View style={styles.scoreRow}>
                 <Text style={styles.scoreLabel}>{score.label}</Text>
                 <View style={styles.scoreRight}>
@@ -354,7 +418,14 @@ export default function ReportScreen() {
               <View style={styles.scoreTrack}>
                 <View style={[styles.scoreFill, { width: `${score.value}%` }]} />
               </View>
-            </View>
+              {canDetail && (
+                <View style={styles.scoreHintRow}>
+                  <Feather name="map-pin" size={11} color={colors.amber400} />
+                  <Text style={styles.scoreHint}>탭하여 분석 부위 보기</Text>
+                  <Feather name="chevron-right" size={13} color={colors.amber400} />
+                </View>
+              )}
+            </Pressable>
           );
         })}
       </View>
@@ -587,6 +658,104 @@ export default function ReportScreen() {
           </View>
         )}
       </View>
+    </Modal>
+
+    {/* 점수 상세: 분석한 얼굴 부위를 사진 위에 표시 */}
+    <Modal
+      visible={!!detailScore}
+      transparent
+      animationType="fade"
+      onRequestClose={closeDetail}
+    >
+      <Pressable style={styles.modalOverlay} onPress={closeDetail}>
+        <Pressable style={styles.detailCard} onPress={() => {}}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{detailScore?.label} · 분석 부위</Text>
+            <Pressable onPress={closeDetail} hitSlop={10}>
+              <Feather name="x" size={22} color={colors.textMuted} />
+            </Pressable>
+          </View>
+
+          {/* 사진 + 부위 표시 */}
+          <View
+            style={styles.detailImageBox}
+            onLayout={(e) => setDetailBoxW(e.nativeEvent.layout.width)}
+          >
+            {detailLoading ? (
+              <Text style={styles.detailLoadingText}>분석 부위를 불러오는 중…</Text>
+            ) : detailLandmarks && detailBoxW > 0 ? (
+              <>
+                <Image
+                  source={{ uri: afterImage }}
+                  style={{ width: detailBoxW, height: detailBoxW * (detailRatio || 1) }}
+                  resizeMode="cover"
+                  onLoad={(e) => {
+                    const src = e?.nativeEvent?.source;
+                    if (src?.width && src?.height) setDetailRatio(src.height / src.width);
+                  }}
+                />
+                {detailRatio && detailScore && (() => {
+                  const cfg = SCORE_DETAIL[detailScore.key];
+                  if (!cfg) return null;
+                  const W = detailBoxW;
+                  const H = detailBoxW * detailRatio;
+                  const lm = detailLandmarks;
+                  const els: any[] = [];
+                  // 중앙 기준선
+                  if (cfg.midline) {
+                    const ids = [10, 1, 152].filter((i) => lm[i]);
+                    const mx = ids.reduce((s, i) => s + lm[i].x, 0) / (ids.length || 1);
+                    els.push(
+                      <Line key="mid" x1={mx * W} y1={0} x2={mx * W} y2={H}
+                        stroke={colors.amber400} strokeWidth={1} strokeDasharray="5 5" opacity={0.8} />
+                    );
+                  }
+                  // 좌우 짝을 잇는 선
+                  (cfg.pairs || []).forEach((pr, idx) => {
+                    const a = lm[pr[0]], b = lm[pr[1]];
+                    if (a && b) {
+                      els.push(
+                        <Line key={`p${idx}`} x1={a.x * W} y1={a.y * H} x2={b.x * W} y2={b.y * H}
+                          stroke={colors.emerald} strokeWidth={1.5} opacity={0.9} />
+                      );
+                    }
+                  });
+                  // 강조 점
+                  cfg.points.forEach((i, idx) => {
+                    const p = lm[i];
+                    if (p) {
+                      els.push(
+                        <Circle key={`c${idx}`} cx={p.x * W} cy={p.y * H} r={4.5}
+                          fill={colors.amber400} stroke={colors.bg} strokeWidth={1.5} />
+                      );
+                    }
+                  });
+                  return (
+                    <Svg style={StyleSheet.absoluteFill as any} width={W} height={H}>
+                      {els}
+                    </Svg>
+                  );
+                })()}
+              </>
+            ) : (
+              <Text style={styles.detailLoadingText}>
+                이 사진에서 분석 부위를 표시할 수 없어요.
+              </Text>
+            )}
+          </View>
+
+          {/* 설명 + 점수 */}
+          {detailScore && (
+            <>
+              <Text style={styles.detailDesc}>{SCORE_DETAIL[detailScore.key]?.desc}</Text>
+              <View style={styles.detailScoreRow}>
+                <Text style={styles.detailScoreLabel}>이 분석 점수</Text>
+                <Text style={styles.detailScoreValue}>{detailScore.value}점</Text>
+              </View>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
     </Modal>
     </>
   );
@@ -1122,6 +1291,71 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.amber500,
     borderRadius: radius.full,
+  },
+  scoreCardTappable: {
+    borderColor: 'rgba(245,158,11,0.35)',
+  },
+  scoreHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 10,
+  },
+  scoreHint: {
+    color: colors.amber400,
+    fontSize: 11,
+    fontWeight: '500',
+    flex: 1,
+  },
+  // 점수 상세(분석 부위) 팝업
+  detailCard: {
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '88%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    padding: 16,
+  },
+  detailImageBox: {
+    width: '100%',
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    minHeight: 180,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailLoadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingVertical: 40,
+  },
+  detailDesc: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 14,
+  },
+  detailScoreRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+  },
+  detailScoreLabel: {
+    color: colors.textMuted,
+    fontSize: 14,
+  },
+  detailScoreValue: {
+    color: colors.amber400,
+    fontSize: 22,
+    fontWeight: 'bold',
   },
   // 점수 추이 차트 카드
   trendCard: {

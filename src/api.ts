@@ -286,6 +286,19 @@ export async function getHistory(): Promise<{ count: number; records: ScanRecord
   return response.json();
 }
 
+// 저장된 분석 사진(기록 id)에서 얼굴 특징점 478개를 다시 받아옵니다.
+// 리포트 상세에서 "분석 부위를 사진 위에 표시"할 때 사용합니다.
+export type ScanLandmarksResult = {
+  detected: boolean;
+  message?: string;
+  landmark_count?: number;
+  landmarks?: LandmarkPoint[];
+};
+export async function getScanLandmarks(id: number): Promise<ScanLandmarksResult> {
+  const response = await fetch(`${BACKEND_URL}/scan/${id}/landmarks`, { headers: authHeaders() });
+  return response.json();
+}
+
 // 추천 제품 하나의 형태입니다.
 export type RecommendedProduct = {
   name: string; // 제품 이름
