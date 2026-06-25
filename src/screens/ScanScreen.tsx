@@ -7,6 +7,7 @@ import {
   Image,
   LayoutChangeEvent,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 import Text from '../components/AppText';
 import Face3DViewer from '../components/Face3DViewer';
+import CameraCapture from '../components/CameraCapture';
 import { saveScan, FaceScore, LandmarkPoint, HeadPose, ScanQuality, submitFeedback, BACKEND_URL } from '../api';
 import { colors, radius } from '../theme';
 
@@ -51,6 +53,7 @@ export default function ScanScreen() {
   const [matching, setMatching] = useState(false); // "추천 상품 매칭 중" 로딩 표시 여부
   const [show3D, setShow3D] = useState(false); // 3D 점구름 뷰어 팝업
   const [feedbackDone, setFeedbackDone] = useState(false); // 만족도 평가 완료 여부
+  const [cameraOpen, setCameraOpen] = useState(false); // 앱 내 카메라 화면 열림 여부
 
   // 스캔 라인 위치 애니메이션 값
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -81,32 +84,38 @@ export default function ScanScreen() {
     }
   }, [status, scanLine]);
 
-  // "사진 선택 후 분석" 버튼을 눌렀을 때
-  async function handlePickAndScan(fromCamera = false) {
-    // 카메라 촬영이면 카메라 권한을, 갤러리면 사진 접근 권한을 요청합니다.
-    if (fromCamera) {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        setStatus('error');
-        setMessage('카메라 권한이 필요합니다. 설정에서 허용해 주세요.');
-        return;
-      }
-    } else {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setStatus('error');
-        setMessage('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
-        return;
-      }
+  // 카메라 버튼: 휴대폰은 앱 안의 카메라 화면을 열고, 웹은 기존 촬영 방식을 씁니다.
+  async function handleCamera() {
+    if (Platform.OS !== 'web') {
+      setCameraOpen(true); // 앱 내 카메라(가이드 포함)
+      return;
     }
-
-    // 카메라로 촬영하거나 갤러리에서 사진을 고릅니다.
-    const picked = fromCamera
-      ? await ImagePicker.launchCameraAsync({ quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      setStatus('error');
+      setMessage('카메라 권한이 필요합니다. 설정에서 허용해 주세요.');
+      return;
+    }
+    const picked = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (picked.canceled) return;
+    analyzeUri(picked.assets[0].uri);
+  }
 
-    const uri = picked.assets[0].uri;
+  // 갤러리에서 사진 선택
+  async function handlePickGallery() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setStatus('error');
+      setMessage('사진 접근 권한이 필요합니다. 설정에서 허용해 주세요.');
+      return;
+    }
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (picked.canceled) return;
+    analyzeUri(picked.assets[0].uri);
+  }
+
+  // 고른/촬영한 사진(uri)을 분석하고 결과를 표시합니다. (카메라·갤러리 공통)
+  async function analyzeUri(uri: string) {
     setImageUri(uri);
     setScores(null);
     setLandmarks(null);
@@ -404,10 +413,10 @@ export default function ScanScreen() {
           </View>
         ) : (
           <View style={styles.footerRow}>
-            {/* 카메라로 촬영 */}
+            {/* 카메라로 촬영 (앱 내 카메라 + 얼굴 가이드) */}
             <Pressable
               style={[styles.scanButton, styles.scanButtonFlex]}
-              onPress={() => handlePickAndScan(true)}
+              onPress={handleCamera}
             >
               <View style={styles.scanButtonInner}>
                 <Feather name="camera" size={20} color={colors.bg} />
@@ -418,7 +427,7 @@ export default function ScanScreen() {
             {/* 갤러리에서 선택 */}
             <Pressable
               style={[styles.scanButtonOutline, styles.scanButtonFlex]}
-              onPress={() => handlePickAndScan(false)}
+              onPress={handlePickGallery}
             >
               <View style={styles.scanButtonInner}>
                 <Feather name="image" size={20} color={colors.text} />
@@ -428,6 +437,17 @@ export default function ScanScreen() {
           </View>
         )}
       </View>
+
+      {/* 앱 내 카메라 화면 (얼굴 가이드 + 실시간 안내) */}
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <CameraCapture
+          onClose={() => setCameraOpen(false)}
+          onCapture={(uri) => {
+            setCameraOpen(false);
+            analyzeUri(uri);
+          }}
+        />
+      </Modal>
 
       {/* 3D 안면 점구름 뷰어 */}
       <Modal visible={show3D} transparent animationType="fade" onRequestClose={() => setShow3D(false)}>

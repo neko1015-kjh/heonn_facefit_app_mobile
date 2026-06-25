@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.heonn.facefit",
-      "versionCode": 13,
+      "versionCode": 14,
       "adaptiveIcon": {
         "backgroundColor": "#D8AE58",
         "foregroundImage": "./assets/android-icon-foreground.png"
@@ -29,7 +29,13 @@
     },
     "owner": "neko1015",
     "plugins": [
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "얼굴 분석 사진을 촬영하기 위해 카메라를 사용합니다."
+        }
+      ]
     ]
   }
 }

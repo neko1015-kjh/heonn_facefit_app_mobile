@@ -345,6 +345,19 @@ export async function saveScan(
   throw new Error(`5회 재시도 실패 — ${lastDetail}`);
 }
 
+// 실시간 촬영 가이드: 미리보기 프레임을 보내 '얼굴 인식·위치·정면' 안내를 받습니다.
+// (카메라 화면에서 1~2초마다 호출 — 실패해도 조용히 넘어가 가이드만 멈춥니다)
+export type GuideResult = { detected: boolean; ok: boolean; hint: string };
+export async function sendGuideFrame(uri: string): Promise<GuideResult> {
+  try {
+    const { json } = await uploadImageFile('/scan/guide', uri);
+    if (json && typeof json.hint === 'string') return json as GuideResult;
+  } catch {
+    // 네트워크 일시 실패는 무시(다음 프레임에서 다시 시도)
+  }
+  return { detected: false, ok: false, hint: '' };
+}
+
 // 저장된 모든 이력을 최신순으로 가져오는 함수입니다.
 export async function getHistory(): Promise<{ count: number; records: ScanRecord[] }> {
   const response = await fetch(`${BACKEND_URL}/history`, { headers: authHeaders() });
