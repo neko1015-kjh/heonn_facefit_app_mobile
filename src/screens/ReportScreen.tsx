@@ -19,7 +19,7 @@ import { colors, radius } from '../theme';
 const TABS = ['주간', '월간', '누적'];
 
 // 현재 앱 빌드 번호(설치된 버전 확인용). app.json의 versionCode와 같게 유지합니다.
-const APP_BUILD = 11;
+const APP_BUILD = 12;
 
 // 서버 기준 상대 경로를 전체 사진 주소로 바꿉니다.
 function fullImageUrl(path: string) {
@@ -433,6 +433,39 @@ export default function ReportScreen() {
           );
         })}
       </View>
+      )}
+
+      {/* 측정 신뢰도 카드: 모든 분석에 적용되는 보정을 알려 신뢰도를 높입니다. */}
+      {showReport && newest && (
+        <View style={styles.trustCard}>
+          <View style={styles.trustHeader}>
+            <Feather name="shield" size={16} color={colors.emerald} />
+            <Text style={styles.trustTitle}>측정 신뢰도</Text>
+          </View>
+          <Text style={styles.trustDesc}>
+            매 분석마다 같은 조건에서 재도록 아래 보정을 자동 적용해요.
+          </Text>
+          <View style={styles.trustList}>
+            <View style={styles.trustItem}>
+              <Feather name="user-check" size={14} color={colors.emerald} />
+              <Text style={styles.trustItemText}>
+                <Text style={styles.trustItemBold}>정면 확인</Text> · 고개가 많이 돌아간 사진은 다시 촬영 안내
+              </Text>
+            </View>
+            <View style={styles.trustItem}>
+              <Feather name="rotate-cw" size={14} color={colors.emerald} />
+              <Text style={styles.trustItemText}>
+                <Text style={styles.trustItemBold}>각도 보정</Text> · 얼굴을 똑바로 세워 기울임 때문에 생기는 가짜 비대칭 제거
+              </Text>
+            </View>
+            <View style={styles.trustItem}>
+              <Feather name="sun" size={14} color={colors.emerald} />
+              <Text style={styles.trustItemText}>
+                <Text style={styles.trustItemBold}>조명 보정</Text> · 조명의 색·밝기 영향을 줄여 일관된 피부톤(붉은기·밝기) 측정
+              </Text>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* 점수 추이 차트 + 요약 (정상 비교 가능할 때) */}
@@ -1368,6 +1401,50 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   // 점수 추이 차트 카드
+  // 측정 신뢰도 카드
+  trustCard: {
+    marginTop: 16,
+    backgroundColor: 'rgba(52,211,153,0.06)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.3)',
+    padding: 16,
+  },
+  trustHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  trustTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  trustDesc: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  trustList: {
+    gap: 10,
+  },
+  trustItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  trustItemText: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  trustItemBold: {
+    color: colors.text,
+    fontWeight: '700',
+  },
   trendCard: {
     marginTop: 16,
     backgroundColor: colors.surface,

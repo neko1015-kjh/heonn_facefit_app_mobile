@@ -291,6 +291,16 @@ async function uploadImageFile(
 // 얼굴 점 하나의 좌표입니다. x, y는 0~1 비율, z는 상대 깊이(간이 3D 표시용).
 export type LandmarkPoint = { x: number; y: number; z?: number };
 
+// 머리 각도(정면 정도). 0에 가까울수록 정면. 단위: 도(°)
+export type HeadPose = { yaw: number; pitch: number; roll: number };
+
+// 측정 품질 정보 — 분석에 어떤 보정이 적용됐는지(앱에서 배지로 표시)
+export type ScanQuality = {
+  frontal: boolean; // 정면 게이팅 통과
+  angle_corrected: boolean; // 점수 각도 보정(고개 기울임 펴기) 적용
+  light_corrected: boolean; // 조명 보정(피부톤) 적용
+};
+
 // 사진을 분석하고 그 결과를 이력으로 저장하는 함수입니다.
 export async function saveScan(
   uri: string
@@ -301,6 +311,8 @@ export async function saveScan(
   image_size?: { width: number; height: number };
   landmarks?: LandmarkPoint[];
   age?: string;
+  pose?: HeadPose | null; // 머리 각도(측정 품질 표시용)
+  quality?: ScanQuality; // 적용된 보정 정보
   record?: ScanRecord;
 }> {
   // 먼저 서버가 깨어날 때까지 기다립니다(콜드스타트 대비, 최대 약 70초).

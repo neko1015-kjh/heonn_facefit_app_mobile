@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import Text from '../components/AppText';
 import Face3DViewer from '../components/Face3DViewer';
-import { saveScan, FaceScore, LandmarkPoint, submitFeedback, BACKEND_URL } from '../api';
+import { saveScan, FaceScore, LandmarkPoint, HeadPose, ScanQuality, submitFeedback, BACKEND_URL } from '../api';
 import { colors, radius } from '../theme';
 
 // 추천할 괄사 디바이스 이미지들 (assets/products 폴더의 실제 이미지)
@@ -43,6 +43,8 @@ export default function ScanScreen() {
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [scores, setScores] = useState<FaceScore[] | null>(null); // 계산된 점수
   const [age, setAge] = useState<string>(''); // 추정 나이대(참고용)
+  const [quality, setQuality] = useState<ScanQuality | null>(null); // 적용된 보정 정보
+  const [pose, setPose] = useState<HeadPose | null>(null); // 머리 각도(정면 정도)
   const [message, setMessage] = useState(''); // 안내/오류 문구
   const [showGuasha, setShowGuasha] = useState(false); // 괄사 추천 팝업 열림 여부
   const [galleryWidth, setGalleryWidth] = useState(280); // 이미지 갤러리 한 장 너비
@@ -110,6 +112,8 @@ export default function ScanScreen() {
     setLandmarks(null);
     setImageSize(null);
     setAge('');
+    setQuality(null);
+    setPose(null);
     setMessage('');
     setFeedbackDone(false); // 새 분석이므로 만족도 평가를 다시 받습니다.
     setStatus('analyzing');
@@ -121,6 +125,8 @@ export default function ScanScreen() {
       if (data.detected && data.record) {
         setScores(data.record.scores);
         setAge(data.record.age ?? data.age ?? '');
+        setQuality(data.quality ?? null);
+        setPose(data.pose ?? null);
         setLandmarks(data.landmarks ?? null);
         setImageSize(data.image_size ?? null);
         setStatus('done');
@@ -291,6 +297,38 @@ export default function ScanScreen() {
               <Feather name="check-circle" size={18} color={colors.emerald} />
               <Text style={styles.resultTitle}>분석 완료 · 기록 저장됨</Text>
             </View>
+
+            {/* 측정 품질 배지: 어떤 보정을 거쳤는지 보여줘 신뢰도를 높입니다. */}
+            {quality && (
+              <>
+                <View style={styles.badgeRow}>
+                  {quality.frontal && (
+                    <View style={styles.badge}>
+                      <Feather name="user-check" size={12} color={colors.emerald} />
+                      <Text style={styles.badgeText}>정면</Text>
+                    </View>
+                  )}
+                  {quality.angle_corrected && (
+                    <View style={styles.badge}>
+                      <Feather name="rotate-cw" size={12} color={colors.emerald} />
+                      <Text style={styles.badgeText}>각도 보정</Text>
+                    </View>
+                  )}
+                  {quality.light_corrected && (
+                    <View style={styles.badge}>
+                      <Feather name="sun" size={12} color={colors.emerald} />
+                      <Text style={styles.badgeText}>조명 보정</Text>
+                    </View>
+                  )}
+                </View>
+                {pose && (
+                  <Text style={styles.poseNote}>
+                    머리 각도 약 {Math.round(Math.max(Math.abs(pose.yaw), Math.abs(pose.pitch), Math.abs(pose.roll)))}° · 기울임·조명 영향을 보정해 측정했어요
+                  </Text>
+                )}
+              </>
+            )}
+
             <View style={styles.scoreList}>
               {scores.map((s) => (
                 <View key={s.key} style={styles.scoreItem}>
@@ -630,6 +668,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  // 측정 품질 배지(정면·각도 보정·조명 보정)
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(52,211,153,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.35)',
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  badgeText: {
+    color: colors.emerald,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  poseNote: {
+    color: colors.textFaint,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 16,
   },
   scoreList: {
     width: '100%',
