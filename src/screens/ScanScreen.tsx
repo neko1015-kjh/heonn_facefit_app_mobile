@@ -332,7 +332,10 @@ export default function ScanScreen() {
             <View style={styles.scoreList}>
               {scores.map((s) => (
                 <View key={s.key} style={styles.scoreItem}>
-                  <Text style={styles.scoreLabel}>{s.label}</Text>
+                  <View style={styles.scoreItemLeft}>
+                    <Text style={styles.scoreLabel}>{s.label}</Text>
+                    {s.basis ? <Text style={styles.scoreBasis}>{s.basis}</Text> : null}
+                  </View>
                   <Text style={styles.scoreValue}>{s.value}점</Text>
                 </View>
               ))}
@@ -714,9 +717,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
+  scoreItemLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
   scoreLabel: {
     color: colors.textMuted,
     fontSize: 14,
+  },
+  scoreBasis: {
+    color: colors.textFaint,
+    fontSize: 11,
+    marginTop: 2,
   },
   scoreValue: {
     color: colors.amber400,

@@ -19,7 +19,7 @@ import { colors, radius } from '../theme';
 const TABS = ['주간', '월간', '누적'];
 
 // 현재 앱 빌드 번호(설치된 버전 확인용). app.json의 versionCode와 같게 유지합니다.
-const APP_BUILD = 12;
+const APP_BUILD = 13;
 
 // 서버 기준 상대 경로를 전체 사진 주소로 바꿉니다.
 function fullImageUrl(path: string) {
@@ -422,6 +422,7 @@ export default function ReportScreen() {
               <View style={styles.scoreTrack}>
                 <View style={[styles.scoreFill, { width: `${score.value}%` }]} />
               </View>
+              {score.basis ? <Text style={styles.scoreBasis}>{score.basis}</Text> : null}
               {canDetail && (
                 <View style={styles.scoreHintRow}>
                   <Feather name="map-pin" size={11} color={colors.amber400} />
@@ -799,7 +800,7 @@ export default function ReportScreen() {
 }
 
 // 아직 기록이 없을 때 보여줄 예시 점수
-const SAMPLE_SCORES = [
+const SAMPLE_SCORES: FaceScore[] = [
   { key: 'symmetry', label: '안면 비대칭 개선도', value: 82 },
   { key: 'balance', label: '좌우 균형 (부기)', value: 88 },
 ];
@@ -1343,6 +1344,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 10,
+  },
+  scoreBasis: {
+    color: colors.textFaint,
+    fontSize: 11,
+    marginTop: 6,
   },
   scoreHint: {
     color: colors.amber400,

@@ -221,6 +221,7 @@ export type FaceScore = {
   key: string; // 점수 종류 식별자
   label: string; // 화면에 보일 이름
   value: number; // 0~100 점수
+  basis?: string; // 점수 근거(측정값+단위, 예: '좌우 폭 차이 5.9%')
 };
 
 // 점수 분석 결과의 형태입니다.
