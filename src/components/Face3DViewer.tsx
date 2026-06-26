@@ -23,32 +23,46 @@ export default function Face3DViewer({ points }: Props) {
   const dragging = useRef(false);
   const start = useRef({ yaw: 0.5, pitch: 0.05 });
 
+  // [각도 보정 반영] 점수 계산과 똑같이, 얼굴을 똑바로 세운(roll 보정) 좌표로 3D를 그립니다.
+  // 이마(10)→턱(152) 축의 기울기를 구해 코끝(1) 기준으로 회전시켜 펴 줍니다.
+  const pts = useMemo(() => {
+    const f = points[10], c = points[152], o = points[1];
+    if (!f || !c || !o) return points;
+    const roll = Math.atan2(c.x - f.x, c.y - f.y); // 똑바로(아래) 기준에서 벗어난 각
+    const cosA = Math.cos(roll), sinA = Math.sin(roll);
+    return points.map((p) => ({
+      x: o.x + (p.x - o.x) * cosA - (p.y - o.y) * sinA,
+      y: o.y + (p.x - o.x) * sinA + (p.y - o.y) * cosA,
+      z: p.z,
+    }));
+  }, [points]);
+
   // 점들의 중심·스케일을 한 번만 계산
   const geo = useMemo(() => {
-    if (points.length === 0) return { cx: 0.5, cy: 0.5, cz: 0, scale: BOX };
+    if (pts.length === 0) return { cx: 0.5, cy: 0.5, cz: 0, scale: BOX };
     let sx = 0, sy = 0, sz = 0;
-    for (const p of points) {
+    for (const p of pts) {
       sx += p.x; sy += p.y; sz += p.z ?? 0;
     }
-    const cx = sx / points.length, cy = sy / points.length, cz = sz / points.length;
+    const cx = sx / pts.length, cy = sy / pts.length, cz = sz / pts.length;
     let maxR = 0.0001;
-    for (const p of points) maxR = Math.max(maxR, Math.abs(p.x - cx), Math.abs(p.y - cy));
+    for (const p of pts) maxR = Math.max(maxR, Math.abs(p.x - cx), Math.abs(p.y - cy));
     return { cx, cy, cz, scale: (BOX * 0.4) / maxR };
-  }, [points]);
+  }, [pts]);
 
   // 가까운 점끼리 연결한 메시 선(에지) 목록을 한 번만 계산 (kNN)
   const edges = useMemo(() => {
-    const n = points.length;
+    const n = pts.length;
     const K = 3;
     const seen = new Set<string>();
     const list: Array<[number, number]> = [];
     for (let i = 0; i < n; i++) {
-      const pi = points[i];
+      const pi = pts[i];
       const piz = pi.z ?? 0;
       const near: Array<{ j: number; d: number }> = [];
       for (let j = 0; j < n; j++) {
         if (j === i) continue;
-        const pj = points[j];
+        const pj = pts[j];
         const dx = pi.x - pj.x, dy = pi.y - pj.y, dz = piz - (pj.z ?? 0);
         near.push({ j, d: dx * dx + dy * dy + dz * dz });
       }
@@ -63,7 +77,7 @@ export default function Face3DViewer({ points }: Props) {
       }
     }
     return list;
-  }, [points]);
+  }, [pts]);
 
   // 자동 회전(드래그 중이 아닐 때)
   useEffect(() => {
@@ -96,7 +110,7 @@ export default function Face3DViewer({ points }: Props) {
 
   // 모든 점을 회전·원근 투영
   const proj = useMemo(() => {
-    return points.map((p) => {
+    return pts.map((p) => {
       const x0 = (p.x - geo.cx) * geo.scale;
       const y0 = (p.y - geo.cy) * geo.scale;
       const z0 = ((p.z ?? 0) - geo.cz) * geo.scale * Z_AMP;
@@ -108,7 +122,7 @@ export default function Face3DViewer({ points }: Props) {
       return { x: BOX / 2 + xr * persp, y: BOX / 2 + yr * persp, z: zr2 };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, geo, yaw, pitch]);
+  }, [pts, geo, yaw, pitch]);
 
   // 메시 선을 앞쪽/뒤쪽으로 나눠 그려서(뒤는 흐리게) 입체감을 줍니다.
   let frontPath = '';
