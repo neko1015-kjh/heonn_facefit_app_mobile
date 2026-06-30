@@ -165,9 +165,20 @@ export default function App() {
       return;
     }
 
-    // ── 구글: 웹에서만 실제 OAuth(네이티브 구글은 추후) ──
-    if (provider === '구글' && Platform.OS === 'web') {
-      window.location.href = `${api.BACKEND_URL}/auth/google/login`;
+    // ── 구글: 진짜 OAuth ── (카카오와 같은 방식: 웹은 이동, 앱은 인앱 브라우저)
+    if (provider === '구글') {
+      if (Platform.OS === 'web') {
+        window.location.href = `${api.BACKEND_URL}/auth/google/login`;
+        return;
+      }
+      try {
+        const u = await api.loginWithGoogleNative(remember);
+        if (!u) return; // 사용자가 취소하거나 인증 실패 → 조용히 종료
+        routeAfterLogin(u);
+      } catch (e) {
+        console.log('구글 로그인 실패:', e);
+        alert('구글 로그인 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요.');
+      }
       return;
     }
 
