@@ -1,5 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Image,
   LayoutChangeEvent,
@@ -159,9 +159,14 @@ export default function ReportScreen() {
     setBoxWidth(e.nativeEvent.layout.width);
   }
 
-  function updateFromTouch(locationX: number) {
+  // 비교 영역의 화면상 왼쪽 좌표(절대). 드래그 중 손가락이 자식 위로 가도 좌표가 튀지 않게
+  // 절대좌표(pageX)에서 이 값을 빼서 위치를 계산합니다.
+  const boxLeftRef = useRef(0);
+
+  // 절대 X좌표(pageX)로 슬라이더 위치를 부드럽게 갱신합니다.
+  function updateFromPageX(pageX: number) {
     if (boxWidth <= 0) return;
-    let percent = (locationX / boxWidth) * 100;
+    let percent = ((pageX - boxLeftRef.current) / boxWidth) * 100;
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     setSliderPos(percent);
@@ -308,8 +313,15 @@ export default function ReportScreen() {
           onLayout={onBoxLayout}
           onStartShouldSetResponder={() => !!newest}
           onMoveShouldSetResponder={() => !!newest}
-          onResponderGrant={(e) => updateFromTouch(e.nativeEvent.locationX)}
-          onResponderMove={(e) => updateFromTouch(e.nativeEvent.locationX)}
+          // 가로 드래그가 시작되면 바깥 스크롤뷰가 가로채지 못하게(끊김 방지)
+          onMoveShouldSetResponderCapture={() => !!newest}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={(e) => {
+            // grant 시점엔 이 박스가 터치 대상이라 locationX가 박스 기준 → 박스의 절대 왼쪽좌표 계산
+            boxLeftRef.current = e.nativeEvent.pageX - e.nativeEvent.locationX;
+            updateFromPageX(e.nativeEvent.pageX);
+          }}
+          onResponderMove={(e) => updateFromPageX(e.nativeEvent.pageX)}
         >
           {newest ? (
             <>
