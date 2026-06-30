@@ -111,12 +111,12 @@ export async function login(provider: string, remember = true): Promise<AppUser>
   throw lastErr ?? new Error('로그인 실패');
 }
 
-// 휴대폰(네이티브)에서 진짜 카카오 로그인을 합니다.
-// 인앱 브라우저로 카카오 인증 → 백엔드가 앱(facefit://auth?token=)으로 돌려보내면 토큰을 꺼내 로그인.
+// 휴대폰(네이티브)에서 진짜 소셜 로그인을 합니다(카카오·네이버 공용).
+// 인앱 브라우저로 인증 → 백엔드가 앱(facefit://auth?token=)으로 돌려보내면 토큰을 꺼내 로그인.
 // 성공 시 사용자, 사용자가 취소하면 null.
-export async function loginWithKakaoNative(remember = true): Promise<AppUser | null> {
-  await waitForBackendReady(); // 콜드스타트면 미리 깨움(카카오 콜백이 서버를 호출하므로)
-  const authUrl = `${BACKEND_URL}/auth/kakao/login?state=native`;
+async function loginWithOAuthNative(provider: 'kakao' | 'naver', remember = true): Promise<AppUser | null> {
+  await waitForBackendReady(); // 콜드스타트면 미리 깨움(인증 콜백이 서버를 호출하므로)
+  const authUrl = `${BACKEND_URL}/auth/${provider}/login?state=native`;
   const result = await WebBrowser.openAuthSessionAsync(authUrl, 'facefit://auth');
   if (result.type !== 'success' || !result.url) return null; // 취소/닫음
   const m = result.url.match(/[?&]token=([^&]+)/);
@@ -124,6 +124,16 @@ export async function loginWithKakaoNative(remember = true): Promise<AppUser | n
   const token = decodeURIComponent(m[1]);
   await setAuthToken(token, remember);
   return await fetchMe();
+}
+
+// 카카오 네이티브 로그인
+export function loginWithKakaoNative(remember = true): Promise<AppUser | null> {
+  return loginWithOAuthNative('kakao', remember);
+}
+
+// 네이버 네이티브 로그인
+export function loginWithNaverNative(remember = true): Promise<AppUser | null> {
+  return loginWithOAuthNative('naver', remember);
 }
 
 // 저장된 토큰으로 로그인 상태 확인(자동 로그인). 유효하면 사용자, 아니면 null.
