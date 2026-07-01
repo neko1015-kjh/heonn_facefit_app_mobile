@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { PanResponder, StyleSheet, View } from 'react-native';
 import { GLView, ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import Text from './AppText';
 import { LandmarkPoint } from '../api';
 import { buildDenseFaceGeometry } from '../faceGeom';
@@ -14,8 +15,8 @@ const BOX = 300;
 type Props = { points: LandmarkPoint[] };
 
 export default function Face3DViewerGL({ points }: Props) {
-  // 회전 상태(렌더 루프에서 읽으므로 ref로 관리)
-  const rot = useRef({ yaw: 0.25, pitch: 0.0, dragging: false, syaw: 0, spitch: 0 });
+  // 회전 상태(렌더 루프에서 읽으므로 ref로 관리). vyaw = 놓았을 때의 관성 속도.
+  const rot = useRef({ yaw: 0.25, pitch: 0.0, dragging: false, syaw: 0, spitch: 0, vyaw: 0 });
 
   const pan = useRef(
     PanResponder.create({
@@ -25,9 +26,12 @@ export default function Face3DViewerGL({ points }: Props) {
         rot.current.dragging = true;
         rot.current.syaw = rot.current.yaw;
         rot.current.spitch = rot.current.pitch;
+        rot.current.vyaw = 0;
       },
       onPanResponderMove: (_e, g) => {
-        rot.current.yaw = rot.current.syaw + g.dx * 0.01;
+        const newYaw = rot.current.syaw + g.dx * 0.01;
+        rot.current.vyaw = (newYaw - rot.current.yaw); // 최근 이동량 = 관성 속도
+        rot.current.yaw = newYaw;
         rot.current.pitch = Math.max(-1.0, Math.min(1.0, rot.current.spitch + g.dy * 0.01));
       },
       onPanResponderRelease: () => { rot.current.dragging = false; },
@@ -62,6 +66,14 @@ export default function Face3DViewerGL({ points }: Props) {
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
     camera.position.set(0, 0, 2.9);
 
+    // 환경 반사(금속 재질이 진짜처럼 반사되도록) — 방 조명 환경을 미리 구워 사용
+    try {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    } catch (e) {
+      // 환경맵 실패해도 조명만으로 렌더(안전)
+    }
+
     // 3점 조명 + 반구광(하늘/땅 자연광)으로 입체감을 살립니다.
     scene.add(new THREE.HemisphereLight(0xfff6e6, 0x1a1208, 0.55));
     const key = new THREE.DirectionalLight(0xfff1d6, 1.25);   // 주광(위-앞-왼쪽)
@@ -95,9 +107,11 @@ export default function Face3DViewerGL({ points }: Props) {
     geo.setIndex(dense.indices);
     geo.computeVertexNormals(); // 부드러운 셰이딩용 법선
 
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xf2a63a, roughness: 0.62, metalness: 0.18,
-      emissive: 0x2a1a06, emissiveIntensity: 0.35, // 살짝 은은한 골드 발광
+    // 광택 있는 청동/골드 조각상 느낌(방짜유기 브랜드에 맞춤): 금속 + 클리어코트
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: 0xc9862b, roughness: 0.42, metalness: 0.85,
+      clearcoat: 0.55, clearcoatRoughness: 0.35,
+      envMapIntensity: 1.0,
       side: THREE.DoubleSide, flatShading: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -105,7 +119,14 @@ export default function Face3DViewerGL({ points }: Props) {
 
     const animate = () => {
       requestAnimationFrame(animate);
-      if (!rot.current.dragging) rot.current.yaw += 0.005; // 자동 회전(부드럽게)
+      if (!rot.current.dragging) {
+        if (Math.abs(rot.current.vyaw) > 0.0006) {
+          rot.current.yaw += rot.current.vyaw;   // 놓은 뒤 관성으로 계속 돌다가
+          rot.current.vyaw *= 0.94;              // 서서히 감속
+        } else {
+          rot.current.yaw += 0.005;              // 멈추면 은은한 자동 회전
+        }
+      }
       mesh.rotation.y = rot.current.yaw;
       mesh.rotation.x = rot.current.pitch;
       renderer.render(scene, camera);
