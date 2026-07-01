@@ -59,7 +59,7 @@ export default function Face3DViewerGL({ points }: Props) {
     renderer.setClearColor(0x0d0d10, 1);
     // 자연스러운 색·명암(필름 톤매핑 + sRGB)
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 0.95;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     const scene = new THREE.Scene();
@@ -107,11 +107,11 @@ export default function Face3DViewerGL({ points }: Props) {
     geo.setIndex(dense.indices);
     geo.computeVertexNormals(); // 부드러운 셰이딩용 법선
 
-    // 광택 있는 청동/골드 조각상 느낌(방짜유기 브랜드에 맞춤): 금속 + 클리어코트
+    // 매트한 청동 느낌(반짝임 절제): 금속감·광택·반사를 낮춰 은은하게
     const mat = new THREE.MeshPhysicalMaterial({
-      color: 0xc9862b, roughness: 0.42, metalness: 0.85,
-      clearcoat: 0.55, clearcoatRoughness: 0.35,
-      envMapIntensity: 1.0,
+      color: 0xc9862b, roughness: 0.72, metalness: 0.35,
+      clearcoat: 0.1, clearcoatRoughness: 0.7,
+      envMapIntensity: 0.45,
       side: THREE.DoubleSide, flatShading: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
