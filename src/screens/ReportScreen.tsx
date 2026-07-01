@@ -26,6 +26,13 @@ function fullImageUrl(path: string) {
   return `${BACKEND_URL}${path}`;
 }
 
+// 얼굴 부분만 잘라낸 사진 주소(개인정보 보호 + 보기 편함).
+// 서버가 ?face=1 이면 얼굴만 잘라서 돌려줍니다. (점·선 겹쳐 그리는 곳에는 쓰지 않음)
+function faceImageUrl(path: string) {
+  const sep = path.includes('?') ? '&' : '?';
+  return `${BACKEND_URL}${path}${sep}face=1`;
+}
+
 // 날짜 문자열(2026-06-16T21:42:54)을 보기 좋게(2026.06.16) 다듬습니다.
 function formatDate(iso: string) {
   return iso.slice(0, 10).replace(/-/g, '.');
@@ -209,8 +216,12 @@ export default function ReportScreen() {
   const showReport = !blocked && !empty && !needMore; // 정상 비교 가능
 
   // 비교에 쓸 사진 주소 (저장된 실제 기록의 사진)
+  // afterImage/beforeImage = 원본(분석 부위 모달에서 점·선을 겹쳐 그릴 때 사용)
+  // afterFace/beforeFace = 얼굴만 잘라낸 버전(전후 슬라이더·시뮬 등 일반 표시용)
   const afterImage = newest ? fullImageUrl(newest.image_url) : '';
   const beforeImage = oldest ? fullImageUrl(oldest.image_url) : '';
+  const afterFace = newest ? faceImageUrl(newest.image_url) : '';
+  const beforeFace = oldest ? faceImageUrl(oldest.image_url) : '';
 
   // 비교 영역 높이: 사진 비율에 맞춰 잡되, 너무 길어지지 않게 제한합니다.
   const boxHeight =
@@ -325,9 +336,9 @@ export default function ReportScreen() {
         >
           {newest ? (
             <>
-              {/* After 이미지 (최신 기록) — 얼굴 전체가 잘리지 않도록 contain */}
+              {/* After 이미지 (최신 기록) — 얼굴만 잘라 표시 */}
               <Image
-                source={{ uri: afterImage }}
+                source={{ uri: afterFace }}
                 style={styles.image}
                 resizeMode="contain"
                 onLoad={(e) => {
@@ -341,7 +352,7 @@ export default function ReportScreen() {
               {hasTwo && boxWidth > 0 && (
                 <View style={[styles.beforeClip, { width: (boxWidth * sliderPos) / 100 }]}>
                   <Image
-                    source={{ uri: beforeImage }}
+                    source={{ uri: beforeFace }}
                     style={[styles.image, { width: boxWidth }]}
                     resizeMode="contain"
                   />
@@ -600,7 +611,7 @@ export default function ReportScreen() {
               return (
                 <View key={r.id} style={styles.historyRow}>
                   <Image
-                    source={{ uri: fullImageUrl(r.image_url) }}
+                    source={{ uri: faceImageUrl(r.image_url) }}
                     style={styles.historyThumb}
                     resizeMode="cover"
                   />
@@ -652,7 +663,7 @@ export default function ReportScreen() {
             {/* 현재 분석한 얼굴 사진 (참고용) */}
             <View style={styles.simImageWrap}>
               <Image
-                source={{ uri: afterImage }}
+                source={{ uri: afterFace }}
                 style={styles.simImage}
                 resizeMode="contain"
               />
