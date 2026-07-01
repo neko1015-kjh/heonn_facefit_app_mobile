@@ -12,6 +12,7 @@ import {
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import Text from '../components/AppText';
 import { BACKEND_URL, getHistory, getScanLandmarks, FaceScore, ScanRecord, LandmarkPoint } from '../api';
+import { FACE_REGIONS } from '../faceRegions';
 import { colors, radius } from '../theme';
 
 // [6] AI 변화 리포트 화면입니다.
@@ -445,6 +446,14 @@ export default function ReportScreen() {
               <View style={styles.scoreTrack}>
                 <View style={[styles.scoreFill, { width: `${score.value}%` }]} />
               </View>
+              {FACE_REGIONS[score.key] ? (
+                <View style={styles.regionRow}>
+                  <Feather name="map-pin" size={11} color={colors.textMuted} />
+                  <Text style={styles.regionText}>
+                    <Text style={styles.regionLabel}>얼굴 부위</Text> · {FACE_REGIONS[score.key]}
+                  </Text>
+                </View>
+              ) : null}
               {score.basis ? <Text style={styles.scoreBasis}>{score.basis}</Text> : null}
               {canDetail && (
                 <View style={styles.scoreHintRow}>
@@ -1372,6 +1381,21 @@ const styles = StyleSheet.create({
     color: colors.textFaint,
     fontSize: 11,
     marginTop: 6,
+  },
+  regionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  regionText: {
+    color: colors.textMuted,
+    fontSize: 11.5,
+    flex: 1,
+  },
+  regionLabel: {
+    color: colors.text,
+    fontWeight: '600',
   },
   scoreHint: {
     color: colors.amber400,

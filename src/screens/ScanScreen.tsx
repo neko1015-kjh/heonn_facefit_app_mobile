@@ -17,6 +17,7 @@ import Text from '../components/AppText';
 import Face3DViewer from '../components/Face3DViewer';
 import CameraCapture from '../components/CameraCapture';
 import { saveScan, FaceScore, LandmarkPoint, HeadPose, ScanQuality, submitFeedback, BACKEND_URL } from '../api';
+import { FACE_REGIONS } from '../faceRegions';
 import { colors, radius } from '../theme';
 
 // 추천할 괄사 디바이스 이미지들 (assets/products 폴더의 실제 이미지)
@@ -343,6 +344,12 @@ export default function ScanScreen() {
                 <View key={s.key} style={styles.scoreItem}>
                   <View style={styles.scoreItemLeft}>
                     <Text style={styles.scoreLabel}>{s.label}</Text>
+                    {FACE_REGIONS[s.key] ? (
+                      <View style={styles.regionRow}>
+                        <Feather name="map-pin" size={10} color={colors.textMuted} />
+                        <Text style={styles.regionText}>{FACE_REGIONS[s.key]}</Text>
+                      </View>
+                    ) : null}
                     {s.basis ? <Text style={styles.scoreBasis}>{s.basis}</Text> : null}
                   </View>
                   <Text style={styles.scoreValue}>{s.value}점</Text>
@@ -749,6 +756,17 @@ const styles = StyleSheet.create({
     color: colors.textFaint,
     fontSize: 11,
     marginTop: 2,
+  },
+  regionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  regionText: {
+    color: colors.textMuted,
+    fontSize: 11.5,
+    flex: 1,
   },
   scoreValue: {
     color: colors.amber400,
