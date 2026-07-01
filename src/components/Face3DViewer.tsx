@@ -3,15 +3,49 @@ import { PanResponder, StyleSheet, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Text from './AppText';
 import { LandmarkPoint } from '../api';
+import { FACE_MESH_EDGES } from '../faceMeshTesselation';
 import { colors } from '../theme';
 
-// 간이 3D 얼굴 메시 뷰어입니다.
-// 검출된 점(x, y, z)을 3D로 회전시키고, 가까운 점끼리 선으로 이어 '얼굴 망(mesh)'을 그립니다.
+// 3D 얼굴 메시 뷰어입니다.
+// 검출된 점(x, y, z)을 3D로 회전시키고, MediaPipe 공식 삼각망(정해진 연결)으로 '얼굴 면(mesh)'을 그립니다.
 // 깊이 강조 + 원근감으로 입체적으로 보이게 합니다. (드래그 회전 / 자동 회전)
 
 const BOX = 300;
 const Z_AMP = 1.7; // 깊이(z) 강조 배수 — 코 등 돌출이 잘 보이도록
 const FOCAL = BOX * 1.6; // 원근 초점거리
+
+// 스무딩(표면 매끈하게)에 쓰는 이웃 목록: 각 점 → 삼각망으로 연결된 점들.
+// 삼각망은 고정이라 앱 시작 시 한 번만 만들어 둡니다.
+const ADJ: number[][] = (() => {
+  const adj: number[][] = [];
+  for (const [a, b] of FACE_MESH_EDGES) {
+    (adj[a] ||= []).push(b);
+    (adj[b] ||= []).push(a);
+  }
+  return adj;
+})();
+
+// Taubin 스무딩 — 이웃 평균 쪽으로 당겼다(λ) 살짝 밀어(μ) 부피를 유지하며 노이즈만 줄입니다.
+function taubinSmooth(arr: LandmarkPoint[], iters = 2): LandmarkPoint[] {
+  const lambda = 0.33, mu = -0.34;
+  let cur = arr.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0 }));
+  const pass = (f: number) => {
+    cur = cur.map((p, i) => {
+      const nb = ADJ[i];
+      if (!nb || nb.length === 0) return p; // 이웃 없는 점(홍채 등)은 그대로
+      let sx = 0, sy = 0, sz = 0;
+      for (const j of nb) { const q = cur[j]; if (q) { sx += q.x; sy += q.y; sz += q.z ?? 0; } }
+      const k = nb.length;
+      return {
+        x: p.x + f * (sx / k - p.x),
+        y: p.y + f * (sy / k - p.y),
+        z: p.z + f * (sz / k - p.z),
+      };
+    });
+  };
+  for (let it = 0; it < iters; it++) { pass(lambda); pass(mu); }
+  return cur;
+}
 
 type Props = {
   points: LandmarkPoint[];
@@ -30,11 +64,13 @@ export default function Face3DViewer({ points }: Props) {
     if (!f || !c || !o) return points;
     const roll = Math.atan2(c.x - f.x, c.y - f.y); // 똑바로(아래) 기준에서 벗어난 각
     const cosA = Math.cos(roll), sinA = Math.sin(roll);
-    return points.map((p) => ({
+    const rolled = points.map((p) => ({
       x: o.x + (p.x - o.x) * cosA - (p.y - o.y) * sinA,
       y: o.y + (p.x - o.x) * sinA + (p.y - o.y) * cosA,
-      z: p.z,
+      z: p.z ?? 0,
     }));
+    // 삼각망 이웃 기준으로 표면을 매끈하게(검출 노이즈 제거)
+    return taubinSmooth(rolled);
   }, [points]);
 
   // 점들의 중심·스케일을 한 번만 계산
@@ -50,34 +86,11 @@ export default function Face3DViewer({ points }: Props) {
     return { cx, cy, cz, scale: (BOX * 0.4) / maxR };
   }, [pts]);
 
-  // 가까운 점끼리 연결한 메시 선(에지) 목록을 한 번만 계산 (kNN)
+  // MediaPipe 공식 삼각망 연결(정해진 그물망). 점 개수 안에 드는 에지만 사용합니다.
   const edges = useMemo(() => {
     const n = pts.length;
-    const K = 3;
-    const seen = new Set<string>();
-    const list: Array<[number, number]> = [];
-    for (let i = 0; i < n; i++) {
-      const pi = pts[i];
-      const piz = pi.z ?? 0;
-      const near: Array<{ j: number; d: number }> = [];
-      for (let j = 0; j < n; j++) {
-        if (j === i) continue;
-        const pj = pts[j];
-        const dx = pi.x - pj.x, dy = pi.y - pj.y, dz = piz - (pj.z ?? 0);
-        near.push({ j, d: dx * dx + dy * dy + dz * dz });
-      }
-      near.sort((a, b) => a.d - b.d);
-      for (let k = 0; k < K && k < near.length; k++) {
-        const j = near[k].j;
-        const key = i < j ? `${i}_${j}` : `${j}_${i}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          list.push([i, j]);
-        }
-      }
-    }
-    return list;
-  }, [pts]);
+    return FACE_MESH_EDGES.filter(([a, b]) => a < n && b < n);
+  }, [pts.length]);
 
   // 자동 회전(드래그 중이 아닐 때)
   useEffect(() => {
