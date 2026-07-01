@@ -33,9 +33,12 @@ type Props = {
   points: LandmarkPoint[];
 };
 
+// 웹 미리보기에서도 three.js 3D를 켤지 여부. 문제가 있으면 false로 바꾸면 웹은 SVG판으로 돌아갑니다.
+const USE_GL_ON_WEB = true;
+
 export default function Face3DViewer({ points }: Props) {
-  // 휴대폰(앱)에서는 진짜 3D 엔진(three.js) 뷰어를 씁니다. 웹 미리보기는 아래 SVG판으로.
-  if (Platform.OS !== 'web') {
+  // 휴대폰(앱)은 항상 three.js, 웹은 위 플래그에 따라 three.js 또는 아래 SVG판.
+  if (Platform.OS !== 'web' || USE_GL_ON_WEB) {
     return <Face3DViewerGL points={points} />;
   }
 

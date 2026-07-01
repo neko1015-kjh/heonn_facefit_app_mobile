@@ -40,30 +40,39 @@ export default function Face3DViewerGL({ points }: Props) {
     const width = gl.drawingBufferWidth;
     const height = gl.drawingBufferHeight;
 
-    // expo-gl 컨텍스트를 three.js 렌더러에 연결(가짜 canvas 객체 사용)
+    // expo-gl 컨텍스트를 three.js 렌더러에 연결.
+    // 웹에서는 실제 canvas(gl.canvas)를, 네이티브에서는 가짜 canvas 객체를 씁니다.
+    const canvas = (gl as unknown as { canvas?: HTMLCanvasElement }).canvas ?? ({
+      width, height, style: {},
+      addEventListener: () => {}, removeEventListener: () => {},
+      clientWidth: width, clientHeight: height,
+    } as unknown as HTMLCanvasElement);
     const renderer = new THREE.WebGLRenderer({
-      canvas: {
-        width, height, style: {},
-        addEventListener: () => {}, removeEventListener: () => {},
-        clientWidth: width, clientHeight: height,
-      } as unknown as HTMLCanvasElement,
+      canvas,
       context: gl as unknown as WebGLRenderingContext,
       antialias: true,
     });
-    renderer.setSize(width, height);
+    renderer.setSize(width, height, false);
     renderer.setClearColor(0x0d0d10, 1);
+    // 자연스러운 색·명암(필름 톤매핑 + sRGB)
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(0, 0, 2.6);
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+    camera.position.set(0, 0, 2.9);
 
-    // 조명: 은은한 주변광 + 위-앞쪽 주광 + 앰버 림라이트
-    scene.add(new THREE.AmbientLight(0xffffff, 0.45));
-    const key = new THREE.DirectionalLight(0xfff2d8, 1.15);
-    key.position.set(-0.5, 0.7, 1.0);
+    // 3점 조명 + 반구광(하늘/땅 자연광)으로 입체감을 살립니다.
+    scene.add(new THREE.HemisphereLight(0xfff6e6, 0x1a1208, 0.55));
+    const key = new THREE.DirectionalLight(0xfff1d6, 1.25);   // 주광(위-앞-왼쪽)
+    key.position.set(-0.7, 0.9, 1.2);
     scene.add(key);
-    const rim = new THREE.DirectionalLight(0xffcf8a, 0.4);
-    rim.position.set(0.6, -0.3, -0.8);
+    const fill = new THREE.DirectionalLight(0xbfd4ff, 0.35);  // 보조광(반대쪽, 차갑게)
+    fill.position.set(1.0, 0.1, 0.6);
+    scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffb454, 0.75);   // 뒤쪽 앰버 림라이트(윤곽 강조)
+    rim.position.set(0.2, -0.4, -1.2);
     scene.add(rim);
 
     // 검출점 → 3D 지오메트리(면). 롤보정+스무딩된 점을 중심정렬·정규화합니다.
@@ -91,7 +100,8 @@ export default function Face3DViewerGL({ points }: Props) {
     geo.computeVertexNormals(); // 부드러운 셰이딩용 법선
 
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xf59e0b, roughness: 0.55, metalness: 0.12,
+      color: 0xf2a63a, roughness: 0.62, metalness: 0.18,
+      emissive: 0x2a1a06, emissiveIntensity: 0.35, // 살짝 은은한 골드 발광
       side: THREE.DoubleSide, flatShading: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -99,7 +109,7 @@ export default function Face3DViewerGL({ points }: Props) {
 
     const animate = () => {
       requestAnimationFrame(animate);
-      if (!rot.current.dragging) rot.current.yaw += 0.006; // 자동 회전
+      if (!rot.current.dragging) rot.current.yaw += 0.005; // 자동 회전(부드럽게)
       mesh.rotation.y = rot.current.yaw;
       mesh.rotation.x = rot.current.pitch;
       renderer.render(scene, camera);
