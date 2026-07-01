@@ -12,7 +12,7 @@ import { colors } from '../theme';
 // 깊이·법선 셰이딩 + 뒷면 숨김 + 원근감으로 입체적인 얼굴로 보이게 합니다. (드래그 회전 / 자동 회전)
 
 const BOX = 300;
-const Z_AMP = 1.7; // 깊이(z) 강조 배수 — 코 등 돌출이 잘 보이도록
+const Z_AMP = 1.0; // 깊이(z) 배수 — MediaPipe z는 x축과 비슷한 실제 비율이라 1.0이 실물에 맞음(과장하면 코가 너무 깊어 보임)
 const FOCAL = BOX * 1.6; // 원근 초점거리
 const SHADE_BUCKETS = 12; // 밝기 단계 수(면을 이 단계로 묶어 빠르게 그림)
 
