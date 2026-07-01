@@ -4,8 +4,7 @@ import { GLView, ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
 import Text from './AppText';
 import { LandmarkPoint } from '../api';
-import { FACE_MESH_TRIS } from '../faceMeshTriangles';
-import { prepareFacePoints } from '../faceGeom';
+import { buildDenseFaceGeometry } from '../faceGeom';
 import { colors } from '../theme';
 
 // 진짜 3D 엔진(three.js)로 그리는 얼굴 뷰어입니다. (휴대폰 앱 전용 — expo-gl 사용)
@@ -75,8 +74,9 @@ export default function Face3DViewerGL({ points }: Props) {
     rim.position.set(0.2, -0.4, -1.2);
     scene.add(rim);
 
-    // 검출점 → 3D 지오메트리(면). 롤보정+스무딩된 점을 중심정렬·정규화합니다.
-    const prep = prepareFacePoints(points);
+    // 검출점 → 조밀 3D 지오메트리(세분화+스무딩). 중심정렬·정규화합니다.
+    const dense = buildDenseFaceGeometry(points, 2);
+    const prep = dense.verts;
     const nPts = prep.length;
     let cx = 0, cy = 0, cz = 0;
     for (const p of prep) { cx += p.x; cy += p.y; cz += p.z; }
@@ -90,13 +90,9 @@ export default function Face3DViewerGL({ points }: Props) {
       positions[3 * i + 1] = -(prep[i].y - cy) * s;   // 이미지 y(아래로+) → three y(위로+)
       positions[3 * i + 2] = -(prep[i].z - cz) * s;   // 코가 카메라 쪽(+z)으로 돌출
     }
-    const indices: number[] = [];
-    for (const [a, b, c] of FACE_MESH_TRIS) {
-      if (a < nPts && b < nPts && c < nPts) indices.push(a, b, c);
-    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setIndex(indices);
+    geo.setIndex(dense.indices);
     geo.computeVertexNormals(); // 부드러운 셰이딩용 법선
 
     const mat = new THREE.MeshStandardMaterial({

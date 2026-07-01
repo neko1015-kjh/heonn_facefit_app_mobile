@@ -3,6 +3,7 @@
 // SVG 뷰어(웹)와 three.js 뷰어(앱)가 함께 씁니다.
 import { LandmarkPoint } from './api';
 import { FACE_MESH_EDGES } from './faceMeshTesselation';
+import { FACE_MESH_TRIS } from './faceMeshTriangles';
 
 export type Vec3 = { x: number; y: number; z: number };
 
@@ -50,4 +51,70 @@ export function prepareFacePoints(points: LandmarkPoint[]): Vec3[] {
     }));
   }
   return taubinSmooth(rolled);
+}
+
+// ── 조밀화(세분화) ─────────────────────────────────────────────
+// 각 삼각형을 네 개로 쪼개 정점·면을 늘립니다(midpoint subdivision).
+// 이어서 스무딩하면 곡면이 부드러워져 Loop 세분화에 가까운 매끈한 표면이 됩니다.
+// ※ 새 검출/모델 없이 기존 점을 보간하는 방식이라 라이선스 안전합니다.
+function subdivideOnce(verts: Vec3[], tris: number[][]): { verts: Vec3[]; tris: number[][] } {
+  const out = verts.map((v) => ({ x: v.x, y: v.y, z: v.z }));
+  const cache = new Map<string, number>();
+  const midpoint = (a: number, b: number): number => {
+    const key = a < b ? a + '_' + b : b + '_' + a;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const va = out[a], vb = out[b];
+    const idx = out.length;
+    out.push({ x: (va.x + vb.x) / 2, y: (va.y + vb.y) / 2, z: (va.z + vb.z) / 2 });
+    cache.set(key, idx);
+    return idx;
+  };
+  const newTris: number[][] = [];
+  for (const [a, b, c] of tris) {
+    const ab = midpoint(a, b), bc = midpoint(b, c), ca = midpoint(c, a);
+    newTris.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
+  }
+  return { verts: out, tris: newTris };
+}
+
+// 삼각형 연결로 이웃을 만들어 Taubin 스무딩(세분화된 메시용).
+function smoothWithTris(verts: Vec3[], tris: number[][], iters = 1): Vec3[] {
+  const adj: Set<number>[] = verts.map(() => new Set<number>());
+  for (const [a, b, c] of tris) {
+    adj[a].add(b); adj[a].add(c);
+    adj[b].add(a); adj[b].add(c);
+    adj[c].add(a); adj[c].add(b);
+  }
+  const nb = adj.map((s) => Array.from(s));
+  let cur = verts.map((v) => ({ x: v.x, y: v.y, z: v.z }));
+  const pass = (f: number) => {
+    cur = cur.map((p, i) => {
+      const ns = nb[i];
+      if (!ns.length) return p;
+      let sx = 0, sy = 0, sz = 0;
+      for (const j of ns) { sx += cur[j].x; sy += cur[j].y; sz += cur[j].z; }
+      const k = ns.length;
+      return { x: p.x + f * (sx / k - p.x), y: p.y + f * (sy / k - p.y), z: p.z + f * (sz / k - p.z) };
+    });
+  };
+  for (let it = 0; it < iters; it++) { pass(0.33); pass(-0.34); }
+  return cur;
+}
+
+// 조밀한 3D 얼굴 지오메트리(정점 + 삼각형 인덱스)를 만듭니다.
+// levels: 세분화 단계(1=약 3.6천 면, 2=약 1.4만 면). 기본 2.
+export function buildDenseFaceGeometry(points: LandmarkPoint[], levels = 2): { verts: Vec3[]; indices: number[] } {
+  let verts = prepareFacePoints(points);
+  let tris: number[][] = FACE_MESH_TRIS
+    .filter((t) => t[0] < verts.length && t[1] < verts.length && t[2] < verts.length)
+    .map((t) => [t[0], t[1], t[2]]);
+  for (let l = 0; l < levels; l++) {
+    const sub = subdivideOnce(verts, tris);
+    verts = smoothWithTris(sub.verts, sub.tris, 1);
+    tris = sub.tris;
+  }
+  const indices: number[] = [];
+  for (const t of tris) { indices.push(t[0], t[1], t[2]); }
+  return { verts, indices };
 }
