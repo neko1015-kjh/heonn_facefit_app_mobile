@@ -13,6 +13,7 @@ import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import Text from '../components/AppText';
 import { BACKEND_URL, getHistory, getScanLandmarks, FaceScore, ScanRecord, LandmarkPoint } from '../api';
 import { FACE_REGIONS } from '../faceRegions';
+import FaceRegionMini from '../components/FaceRegionMini';
 import { colors, radius } from '../theme';
 
 // [6] AI 변화 리포트 화면입니다.
@@ -447,11 +448,15 @@ export default function ReportScreen() {
                 <View style={[styles.scoreFill, { width: `${score.value}%` }]} />
               </View>
               {FACE_REGIONS[score.key] ? (
-                <View style={styles.regionRow}>
-                  <Feather name="map-pin" size={11} color={colors.textMuted} />
-                  <Text style={styles.regionText}>
-                    <Text style={styles.regionLabel}>얼굴 부위</Text> · {FACE_REGIONS[score.key]}
-                  </Text>
+                <View style={styles.regionBox}>
+                  <FaceRegionMini region={score.key} size={48} />
+                  <View style={styles.regionInfo}>
+                    <View style={styles.regionLabelRow}>
+                      <Feather name="map-pin" size={11} color={colors.amber400} />
+                      <Text style={styles.regionLabel}>분석 부위 · {FACE_REGIONS[score.key].short}</Text>
+                    </View>
+                    <Text style={styles.regionText}>{FACE_REGIONS[score.key].detail}</Text>
+                  </View>
                 </View>
               ) : null}
               {score.basis ? <Text style={styles.scoreBasis}>{score.basis}</Text> : null}
@@ -1382,20 +1387,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 6,
   },
-  regionRow: {
+  regionBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    padding: 8,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+  },
+  regionInfo: {
+    flex: 1,
+  },
+  regionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 8,
+    marginBottom: 3,
+  },
+  regionLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
   },
   regionText: {
     color: colors.textMuted,
     fontSize: 11.5,
-    flex: 1,
-  },
-  regionLabel: {
-    color: colors.text,
-    fontWeight: '600',
+    lineHeight: 16,
   },
   scoreHint: {
     color: colors.amber400,

@@ -18,6 +18,7 @@ import Face3DViewer from '../components/Face3DViewer';
 import CameraCapture from '../components/CameraCapture';
 import { saveScan, FaceScore, LandmarkPoint, HeadPose, ScanQuality, submitFeedback, BACKEND_URL } from '../api';
 import { FACE_REGIONS } from '../faceRegions';
+import FaceRegionMini from '../components/FaceRegionMini';
 import { colors, radius } from '../theme';
 
 // 추천할 괄사 디바이스 이미지들 (assets/products 폴더의 실제 이미지)
@@ -345,9 +346,15 @@ export default function ScanScreen() {
                   <View style={styles.scoreItemLeft}>
                     <Text style={styles.scoreLabel}>{s.label}</Text>
                     {FACE_REGIONS[s.key] ? (
-                      <View style={styles.regionRow}>
-                        <Feather name="map-pin" size={10} color={colors.textMuted} />
-                        <Text style={styles.regionText}>{FACE_REGIONS[s.key]}</Text>
+                      <View style={styles.regionBox}>
+                        <FaceRegionMini region={s.key} size={44} />
+                        <View style={styles.regionInfo}>
+                          <View style={styles.regionLabelRow}>
+                            <Feather name="map-pin" size={10} color={colors.amber400} />
+                            <Text style={styles.regionLabel}>분석 부위 · {FACE_REGIONS[s.key].short}</Text>
+                          </View>
+                          <Text style={styles.regionText}>{FACE_REGIONS[s.key].detail}</Text>
+                        </View>
                       </View>
                     ) : null}
                     {s.basis ? <Text style={styles.scoreBasis}>{s.basis}</Text> : null}
@@ -738,7 +745,7 @@ const styles = StyleSheet.create({
   scoreItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: colors.surface2,
     borderRadius: radius.md,
     paddingHorizontal: 14,
@@ -757,16 +764,36 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-  regionRow: {
+  regionBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  regionInfo: {
+    flex: 1,
+  },
+  regionLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 3,
+    marginBottom: 3,
+  },
+  regionLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
   },
   regionText: {
     color: colors.textMuted,
     fontSize: 11.5,
-    flex: 1,
+    lineHeight: 16,
   },
   scoreValue: {
     color: colors.amber400,
