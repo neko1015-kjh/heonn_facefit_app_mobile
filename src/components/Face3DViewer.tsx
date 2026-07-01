@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, StyleSheet, View } from 'react-native';
+import { PanResponder, Platform, StyleSheet, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Text from './AppText';
 import { LandmarkPoint } from '../api';
-import { FACE_MESH_EDGES } from '../faceMeshTesselation';
 import { FACE_MESH_TRIS } from '../faceMeshTriangles';
+import { prepareFacePoints } from '../faceGeom';
+import Face3DViewerGL from './Face3DViewerGL';
 import { colors } from '../theme';
 
 // 3D 얼굴 메시 뷰어입니다.
-// 검출된 점(x, y, z)을 3D로 회전시키고, MediaPipe 표준 삼각형(면)으로 얼굴을 '솔리드'하게 칠합니다.
-// 깊이·법선 셰이딩 + 뒷면 숨김 + 원근감으로 입체적인 얼굴로 보이게 합니다. (드래그 회전 / 자동 회전)
+// 휴대폰(앱)은 three.js 3D 엔진(Face3DViewerGL)으로, 웹 미리보기는 아래 SVG 솔리드로 그립니다.
+// (SVG판: MediaPipe 표준 삼각형(면) + 깊이·법선 셰이딩 + 뒷면 숨김)
 
 const BOX = 300;
 const Z_AMP = 1.0; // 깊이(z) 배수 — MediaPipe z는 x축과 비슷한 실제 비율이라 1.0이 실물에 맞음(과장하면 코가 너무 깊어 보임)
@@ -28,64 +29,28 @@ function shadeColor(t: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-// 스무딩(표면 매끈하게)에 쓰는 이웃 목록: 각 점 → 삼각망으로 연결된 점들.
-// 삼각망은 고정이라 앱 시작 시 한 번만 만들어 둡니다.
-const ADJ: number[][] = (() => {
-  const adj: number[][] = [];
-  for (const [a, b] of FACE_MESH_EDGES) {
-    (adj[a] ||= []).push(b);
-    (adj[b] ||= []).push(a);
-  }
-  return adj;
-})();
-
-// Taubin 스무딩 — 이웃 평균 쪽으로 당겼다(λ) 살짝 밀어(μ) 부피를 유지하며 노이즈만 줄입니다.
-function taubinSmooth(arr: LandmarkPoint[], iters = 2): LandmarkPoint[] {
-  const lambda = 0.33, mu = -0.34;
-  let cur = arr.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0 }));
-  const pass = (f: number) => {
-    cur = cur.map((p, i) => {
-      const nb = ADJ[i];
-      if (!nb || nb.length === 0) return p; // 이웃 없는 점(홍채 등)은 그대로
-      let sx = 0, sy = 0, sz = 0;
-      for (const j of nb) { const q = cur[j]; if (q) { sx += q.x; sy += q.y; sz += q.z ?? 0; } }
-      const k = nb.length;
-      return {
-        x: p.x + f * (sx / k - p.x),
-        y: p.y + f * (sy / k - p.y),
-        z: p.z + f * (sz / k - p.z),
-      };
-    });
-  };
-  for (let it = 0; it < iters; it++) { pass(lambda); pass(mu); }
-  return cur;
-}
-
 type Props = {
   points: LandmarkPoint[];
 };
 
 export default function Face3DViewer({ points }: Props) {
+  // 휴대폰(앱)에서는 진짜 3D 엔진(three.js) 뷰어를 씁니다. 웹 미리보기는 아래 SVG판으로.
+  if (Platform.OS !== 'web') {
+    return <Face3DViewerGL points={points} />;
+  }
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const [yaw, setYaw] = useState(0.3);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const [pitch, setPitch] = useState(0.04);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const dragging = useRef(false);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const start = useRef({ yaw: 0.3, pitch: 0.04 });
 
-  // [각도 보정 반영] 점수 계산과 똑같이, 얼굴을 똑바로 세운(roll 보정) 좌표로 3D를 그립니다.
-  // 이마(10)→턱(152) 축의 기울기를 구해 코끝(1) 기준으로 회전시켜 펴 줍니다.
-  const pts = useMemo(() => {
-    const f = points[10], c = points[152], o = points[1];
-    if (!f || !c || !o) return points;
-    const roll = Math.atan2(c.x - f.x, c.y - f.y); // 똑바로(아래) 기준에서 벗어난 각
-    const cosA = Math.cos(roll), sinA = Math.sin(roll);
-    const rolled = points.map((p) => ({
-      x: o.x + (p.x - o.x) * cosA - (p.y - o.y) * sinA,
-      y: o.y + (p.x - o.x) * sinA + (p.y - o.y) * cosA,
-      z: p.z ?? 0,
-    }));
-    // 삼각망 이웃 기준으로 표면을 매끈하게(검출 노이즈 제거)
-    return taubinSmooth(rolled);
-  }, [points]);
+  // 롤 보정 + 스무딩된 점 (공용 함수)
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const pts = useMemo(() => prepareFacePoints(points), [points]);
 
   // 점들의 중심·스케일을 한 번만 계산
   const geo = useMemo(() => {
