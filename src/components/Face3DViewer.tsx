@@ -4,15 +4,29 @@ import Svg, { Path } from 'react-native-svg';
 import Text from './AppText';
 import { LandmarkPoint } from '../api';
 import { FACE_MESH_EDGES } from '../faceMeshTesselation';
+import { FACE_MESH_TRIS } from '../faceMeshTriangles';
 import { colors } from '../theme';
 
 // 3D 얼굴 메시 뷰어입니다.
-// 검출된 점(x, y, z)을 3D로 회전시키고, MediaPipe 공식 삼각망(정해진 연결)으로 '얼굴 면(mesh)'을 그립니다.
-// 깊이 강조 + 원근감으로 입체적으로 보이게 합니다. (드래그 회전 / 자동 회전)
+// 검출된 점(x, y, z)을 3D로 회전시키고, MediaPipe 표준 삼각형(면)으로 얼굴을 '솔리드'하게 칠합니다.
+// 깊이·법선 셰이딩 + 뒷면 숨김 + 원근감으로 입체적인 얼굴로 보이게 합니다. (드래그 회전 / 자동 회전)
 
 const BOX = 300;
 const Z_AMP = 1.7; // 깊이(z) 강조 배수 — 코 등 돌출이 잘 보이도록
 const FOCAL = BOX * 1.6; // 원근 초점거리
+const SHADE_BUCKETS = 12; // 밝기 단계 수(면을 이 단계로 묶어 빠르게 그림)
+
+// 빛 방향(뷰 공간): 위-앞쪽에서 비추는 광원. z<0 = 카메라 쪽.
+const LX = -0.35, LY = -0.52, LZ = -0.78;
+const LLEN = Math.hypot(LX, LY, LZ);
+
+// 밝기 t(0~1) → 앰버 계열 색. 어두운 갈색앰버 → 밝은 골드.
+function shadeColor(t: number): string {
+  const r = Math.round(38 + (255 - 38) * t);
+  const g = Math.round(24 + (208 - 24) * t);
+  const b = Math.round(6 + (126 - 6) * t);
+  return `rgb(${r},${g},${b})`;
+}
 
 // 스무딩(표면 매끈하게)에 쓰는 이웃 목록: 각 점 → 삼각망으로 연결된 점들.
 // 삼각망은 고정이라 앱 시작 시 한 번만 만들어 둡니다.
@@ -52,10 +66,10 @@ type Props = {
 };
 
 export default function Face3DViewer({ points }: Props) {
-  const [yaw, setYaw] = useState(0.5);
-  const [pitch, setPitch] = useState(0.05);
+  const [yaw, setYaw] = useState(0.3);
+  const [pitch, setPitch] = useState(0.04);
   const dragging = useRef(false);
-  const start = useRef({ yaw: 0.5, pitch: 0.05 });
+  const start = useRef({ yaw: 0.3, pitch: 0.04 });
 
   // [각도 보정 반영] 점수 계산과 똑같이, 얼굴을 똑바로 세운(roll 보정) 좌표로 3D를 그립니다.
   // 이마(10)→턱(152) 축의 기울기를 구해 코끝(1) 기준으로 회전시켜 펴 줍니다.
@@ -86,12 +100,6 @@ export default function Face3DViewer({ points }: Props) {
     return { cx, cy, cz, scale: (BOX * 0.4) / maxR };
   }, [pts]);
 
-  // MediaPipe 공식 삼각망 연결(정해진 그물망). 점 개수 안에 드는 에지만 사용합니다.
-  const edges = useMemo(() => {
-    const n = pts.length;
-    return FACE_MESH_EDGES.filter(([a, b]) => a < n && b < n);
-  }, [pts.length]);
-
   // 자동 회전(드래그 중이 아닐 때)
   useEffect(() => {
     const id = setInterval(() => {
@@ -121,7 +129,8 @@ export default function Face3DViewer({ points }: Props) {
   const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
   const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
 
-  // 모든 점을 회전·원근 투영
+  // 모든 점을 회전·원근 투영. 화면좌표(x,y)와 뷰공간 3D좌표(vx,vy,vz)를 함께 돌려줍니다.
+  // (vx,vy,vz는 법선·뒷면판별·셰이딩 계산에 씁니다.)
   const proj = useMemo(() => {
     return pts.map((p) => {
       const x0 = (p.x - geo.cx) * geo.scale;
@@ -132,29 +141,68 @@ export default function Face3DViewer({ points }: Props) {
       const yr = y0 * cosP - zr * sinP;
       const zr2 = y0 * sinP + zr * cosP;
       const persp = FOCAL / (FOCAL + zr2);
-      return { x: BOX / 2 + xr * persp, y: BOX / 2 + yr * persp, z: zr2 };
+      return { x: BOX / 2 + xr * persp, y: BOX / 2 + yr * persp, vx: xr, vy: yr, vz: zr2 };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pts, geo, yaw, pitch]);
 
-  // 메시 선을 앞쪽/뒤쪽으로 나눠 그려서(뒤는 흐리게) 입체감을 줍니다.
-  let frontPath = '';
-  let backPath = '';
-  for (const [a, b] of edges) {
-    const pa = proj[a], pb = proj[b];
-    const seg = `M${pa.x.toFixed(1)} ${pa.y.toFixed(1)}L${pb.x.toFixed(1)} ${pb.y.toFixed(1)}`;
-    if ((pa.z + pb.z) / 2 <= 0) frontPath += seg; // 카메라 쪽(앞면)
-    else backPath += seg;
-  }
+  // 삼각형(면)을 밝기 단계별로 묶어 솔리드 셰이딩합니다.
+  // ① 뷰공간 법선 계산 → ② 메시 중심 기준으로 바깥쪽으로 정렬 → ③ 뒷면 숨김 → ④ 광원 셰이딩.
+  // 밝기 단계별 Path 하나로 묶어(면 수백 개 → 12개 Path) 부드럽고 빠르게 그립니다.
+  const bucketPaths = useMemo(() => {
+    const buckets: string[] = new Array(SHADE_BUCKETS).fill('');
+    // 메시 중심(뒷면 판별용)
+    let mcx = 0, mcy = 0, mcz = 0;
+    for (const q of proj) { mcx += q.vx; mcy += q.vy; mcz += q.vz; }
+    const n = proj.length || 1;
+    mcx /= n; mcy /= n; mcz /= n;
+    for (const [ia, ib, ic] of FACE_MESH_TRIS) {
+      const pa = proj[ia], pb = proj[ib], pc = proj[ic];
+      if (!pa || !pb || !pc) continue;
+      // 두 변의 외적 = 법선
+      const e1x = pb.vx - pa.vx, e1y = pb.vy - pa.vy, e1z = pb.vz - pa.vz;
+      const e2x = pc.vx - pa.vx, e2y = pc.vy - pa.vy, e2z = pc.vz - pa.vz;
+      let nx = e1y * e2z - e1z * e2y;
+      let ny = e1z * e2x - e1x * e2z;
+      let nz = e1x * e2y - e1y * e2x;
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      // 바깥쪽으로 정렬(삼각형 중심 - 메시 중심 방향과 같게)
+      const tcx = (pa.vx + pb.vx + pc.vx) / 3 - mcx;
+      const tcy = (pa.vy + pb.vy + pc.vy) / 3 - mcy;
+      const tcz = (pa.vz + pb.vz + pc.vz) / 3 - mcz;
+      if (nx * tcx + ny * tcy + nz * tcz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      // 뒷면 숨김: 바깥 법선이 카메라(-z) 반대로 향하면 건너뜀
+      if (nz > 0.05) continue;
+      // 광원 셰이딩(주변광 0.18 + 확산광)
+      let br = (nx * LX + ny * LY + nz * LZ) / LLEN;
+      br = 0.18 + 0.82 * Math.max(0, br);
+      const bi = Math.min(SHADE_BUCKETS - 1, Math.max(0, Math.floor(br * SHADE_BUCKETS)));
+      buckets[bi] +=
+        `M${pa.x.toFixed(1)} ${pa.y.toFixed(1)}` +
+        `L${pb.x.toFixed(1)} ${pb.y.toFixed(1)}` +
+        `L${pc.x.toFixed(1)} ${pc.y.toFixed(1)}Z`;
+    }
+    return buckets;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proj]);
 
   return (
     <View style={styles.wrap}>
       <View style={styles.box} {...pan.panHandlers}>
         <Svg width={BOX} height={BOX}>
-          {/* 뒤쪽 면 (흐리게) */}
-          <Path d={backPath} stroke={colors.amber600} strokeWidth={0.5} fill="none" opacity={0.25} />
-          {/* 앞쪽 면 (또렷하게) */}
-          <Path d={frontPath} stroke={colors.amber400} strokeWidth={0.8} fill="none" opacity={0.9} />
+          {/* 밝기 단계별로 면을 칠합니다(어두운 면 먼저 → 밝은 면 위로). 이음새를 메우려 살짝 겹쳐 그림 */}
+          {bucketPaths.map((d, i) =>
+            d ? (
+              <Path
+                key={i}
+                d={d}
+                fill={shadeColor((i + 0.5) / SHADE_BUCKETS)}
+                stroke={shadeColor((i + 0.5) / SHADE_BUCKETS)}
+                strokeWidth={0.6}
+              />
+            ) : null
+          )}
         </Svg>
       </View>
       <Text style={styles.hint}>← 드래그해서 돌려보세요 · 가만히 두면 자동 회전 →</Text>
