@@ -1,10 +1,15 @@
 import { Feather } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Svg, { Defs, Ellipse, Mask, Rect } from 'react-native-svg';
 import Text from './AppText';
 import { sendGuideFrame } from '../api';
 import { colors, radius } from '../theme';
+
+// 얼굴 가이드 타원 크기(딤 마스크와 테두리가 같은 크기를 쓰도록 상수로 둡니다)
+const OVAL_W = 250;
+const OVAL_H = 330;
 
 // 앱 안에서 직접 카메라를 띄워 얼굴을 촬영하는 화면입니다.
 // - 화면 가운데 타원 가이드 안에 얼굴을 맞추도록 안내
@@ -18,6 +23,7 @@ export default function CameraCapture({
   onClose: () => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
+  const { width: winW, height: winH } = useWindowDimensions(); // 딤 마스크 위치 계산용
   const camRef = useRef<CameraView>(null);
   const [hint, setHint] = useState('얼굴을 타원 안에 맞춰주세요');
   const [ok, setOk] = useState(false);
@@ -154,6 +160,17 @@ export default function CameraCapture({
         onCameraReady={() => setReady(true)}
       />
 
+      {/* 타원 바깥 어둡게(딤) — 타원만 뚫어 얼굴 영역에 집중되게 합니다 */}
+      <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+        <Defs>
+          <Mask id="ovalHole">
+            <Rect x="0" y="0" width={winW} height={winH} fill="white" />
+            <Ellipse cx={winW / 2} cy={winH / 2} rx={OVAL_W / 2} ry={OVAL_H / 2} fill="black" />
+          </Mask>
+        </Defs>
+        <Rect x="0" y="0" width={winW} height={winH} fill="rgba(0,0,0,0.6)" mask="url(#ovalHole)" />
+      </Svg>
+
       {/* 얼굴 가이드 타원 (정렬되면 초록색으로) + 자동촬영 카운트다운 숫자 */}
       <View style={styles.overlay} pointerEvents="none">
         <View style={[styles.oval, ok && styles.ovalOk]}>
@@ -211,9 +228,9 @@ const styles = StyleSheet.create({
   closeText: { color: colors.textMuted, fontSize: 14, marginTop: 6 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' },
   oval: {
-    width: 250,
-    height: 330,
-    borderRadius: 165,
+    width: OVAL_W,
+    height: OVAL_H,
+    borderRadius: OVAL_H / 2,
     borderWidth: 3,
     borderColor: 'rgba(251,191,36,0.9)',
     borderStyle: 'dashed',
