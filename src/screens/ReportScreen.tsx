@@ -1,6 +1,7 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Image,
   LayoutChangeEvent,
   Modal,
@@ -107,8 +108,10 @@ function sigDist(a?: number[], b?: number[]): number | null {
 
 export default function ReportScreen() {
   const [activeTab, setActiveTab] = useState(0);
-  const [sliderPos, setSliderPos] = useState(50);
   const [boxWidth, setBoxWidth] = useState(0);
+  // 슬라이더 위치를 '픽셀' 단위 Animated.Value로 관리합니다.
+  // 드래그 시 setValue만 하므로 화면 전체 재렌더가 없어 움직임이 부드럽습니다.
+  const sliderX = useRef(new Animated.Value(0)).current;
 
   const [records, setRecords] = useState<ScanRecord[]>([]); // 저장된 이력(최신순)
   const [refreshing, setRefreshing] = useState(false); // 새로고침 중 여부
@@ -165,20 +168,22 @@ export default function ReportScreen() {
 
   // 비교 영역의 가로 길이를 측정합니다(드래그 위치 계산에 필요).
   function onBoxLayout(e: LayoutChangeEvent) {
-    setBoxWidth(e.nativeEvent.layout.width);
+    const w = e.nativeEvent.layout.width;
+    setBoxWidth(w);
+    sliderX.setValue(w / 2); // 처음엔 가운데
   }
 
   // 비교 영역의 화면상 왼쪽 좌표(절대). 드래그 중 손가락이 자식 위로 가도 좌표가 튀지 않게
   // 절대좌표(pageX)에서 이 값을 빼서 위치를 계산합니다.
   const boxLeftRef = useRef(0);
 
-  // 절대 X좌표(pageX)로 슬라이더 위치를 부드럽게 갱신합니다.
+  // 절대 X좌표(pageX)로 슬라이더 위치(px)를 갱신합니다. (setValue만 → 재렌더 없음)
   function updateFromPageX(pageX: number) {
     if (boxWidth <= 0) return;
-    let percent = ((pageX - boxLeftRef.current) / boxWidth) * 100;
-    if (percent < 0) percent = 0;
-    if (percent > 100) percent = 100;
-    setSliderPos(percent);
+    let x = pageX - boxLeftRef.current;
+    if (x < 0) x = 0;
+    if (x > boxWidth) x = boxWidth;
+    sliderX.setValue(x);
   }
 
   // ── 기간 필터 (주간 7일 / 월간 30일 / 누적 전체) ──────────────
@@ -352,23 +357,23 @@ export default function ReportScreen() {
 
               {/* Before 이미지 (가장 오래된 기록, 왼쪽부터 슬라이더 위치까지만 보임) */}
               {hasTwo && boxWidth > 0 && (
-                <View style={[styles.beforeClip, { width: (boxWidth * sliderPos) / 100 }]}>
+                <Animated.View style={[styles.beforeClip, { width: sliderX }]}>
                   <Image
                     source={{ uri: beforeFace }}
                     style={[styles.image, { width: boxWidth }]}
                     resizeMode="contain"
                   />
-                </View>
+                </Animated.View>
               )}
 
-              {/* 슬라이더 손잡이 (기록이 2개 이상일 때만) */}
+              {/* 슬라이더 손잡이 (기록이 2개 이상일 때만) — translateX로 이동(재렌더 없음) */}
               {hasTwo && boxWidth > 0 && (
-                <View style={[styles.sliderHandle, { left: (boxWidth * sliderPos) / 100 }]}>
+                <Animated.View style={[styles.sliderHandle, { transform: [{ translateX: sliderX }] }]}>
                   <View style={styles.handleKnob}>
                     <View style={styles.handleBar} />
                     <View style={styles.handleBar} />
                   </View>
-                </View>
+                </Animated.View>
               )}
 
               {/* Before / After 라벨 (기록 날짜 표시) */}
@@ -1013,6 +1018,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
+    left: 0,
     width: 2,
     backgroundColor: colors.amber500,
     marginLeft: -1,
