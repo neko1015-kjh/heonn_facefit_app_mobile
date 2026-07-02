@@ -23,8 +23,11 @@ export default function CameraCapture({
   const [ok, setOk] = useState(false);
   const [ready, setReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null); // 3·2·1 자동촬영 카운트
   const busyRef = useRef(false); // 가이드 요청이 진행 중이면 중복 호출 방지
   const aliveRef = useRef(true); // 화면이 닫힌 뒤 상태 업데이트 방지
+  const countingRef = useRef(false); // 카운트다운 중이면 가이드 프레임 멈춤(카메라 충돌 방지)
+  const capturingRef = useRef(false); // capturing 최신값을 콜백에서 읽기 위한 ref
 
   // 권한이 없으면 자동으로 한 번 요청합니다.
   useEffect(() => {
@@ -35,7 +38,8 @@ export default function CameraCapture({
   useEffect(() => {
     aliveRef.current = true;
     const id = setInterval(async () => {
-      if (busyRef.current || !ready || capturing || !camRef.current) return;
+      // 촬영 중이거나 카운트다운 중이면 가이드 프레임을 멈춰 카메라 충돌을 막습니다.
+      if (busyRef.current || !ready || capturing || countingRef.current || !camRef.current) return;
       busyRef.current = true;
       try {
         const shot = await camRef.current.takePictureAsync({ quality: 0.25, skipProcessing: true });
@@ -58,15 +62,67 @@ export default function CameraCapture({
     };
   }, [ready, capturing]);
 
-  // 실제 촬영: 고화질로 한 장 찍어 부모에게 전달합니다.
+  // [자동 촬영] 얼굴이 타원 안에 잘 맞으면(ok) 3·2·1 카운트다운을 시작합니다.
+  // 정렬이 깨지면 즉시 취소. 0이 되면 자동으로 촬영합니다.
+  useEffect(() => {
+    if (capturing) return;
+    if (ok && countdown === null) {
+      countingRef.current = true;
+      setCountdown(3);
+    } else if (!ok && countdown !== null) {
+      countingRef.current = false;
+      setCountdown(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, capturing]);
+
+  // 카운트다운 진행(약 0.7초 간격). 0이 되면 촬영.
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      capture();
+      return;
+    }
+    const t = setTimeout(() => {
+      setCountdown((c) => (c === null ? null : c - 1));
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown]);
+
+  // 실제 촬영: 고화질로 한 장 찍어 부모(스캔 화면)에게 전달 → 분석으로 이어집니다.
+  // 가이드 프레임과 충돌하지 않도록 진행 중인 프레임이 끝날 때까지 잠깐 기다리고, 실패 시 한 번 재시도합니다.
   async function capture() {
-    if (!camRef.current || capturing) return;
+    if (!camRef.current || capturingRef.current) return;
+    capturingRef.current = true;
+    countingRef.current = false;
     setCapturing(true);
+    setCountdown(null);
+    // 진행 중인 가이드 프레임이 있으면 끝날 때까지 잠깐 대기(최대 ~0.6초)
+    for (let i = 0; i < 10 && busyRef.current; i++) {
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    const takeOnce = async () => {
+      const shot = await camRef.current!.takePictureAsync({ quality: 0.8, skipProcessing: false });
+      return shot?.uri || null;
+    };
     try {
-      const shot = await camRef.current.takePictureAsync({ quality: 0.8 });
-      if (shot?.uri) onCapture(shot.uri);
+      let uri = await takeOnce();
+      if (!uri) {
+        await new Promise((r) => setTimeout(r, 200));
+        uri = await takeOnce(); // 한 번 재시도
+      }
+      if (uri) {
+        onCapture(uri); // → 부모가 카메라를 닫고 분석을 시작
+        return;
+      }
+      throw new Error('촬영 결과 없음');
     } catch {
+      // 실패하면 다시 찍을 수 있게 상태 복구 + 안내
+      capturingRef.current = false;
       setCapturing(false);
+      setHint('촬영에 실패했어요. 다시 시도해 주세요.');
+      setOk(false);
     }
   }
 
@@ -98,9 +154,13 @@ export default function CameraCapture({
         onCameraReady={() => setReady(true)}
       />
 
-      {/* 얼굴 가이드 타원 (정렬되면 초록색으로) */}
+      {/* 얼굴 가이드 타원 (정렬되면 초록색으로) + 자동촬영 카운트다운 숫자 */}
       <View style={styles.overlay} pointerEvents="none">
-        <View style={[styles.oval, ok && styles.ovalOk]} />
+        <View style={[styles.oval, ok && styles.ovalOk]}>
+          {countdown !== null && countdown > 0 && (
+            <Text style={styles.countNum}>{countdown}</Text>
+          )}
+        </View>
       </View>
 
       {/* 상단: 닫기 + 실시간 안내 */}
@@ -116,7 +176,15 @@ export default function CameraCapture({
 
       {/* 하단: 촬영 버튼 */}
       <View style={styles.bottomBar} pointerEvents="box-none">
-        <Text style={styles.bottomHint}>{ok ? '지금 촬영하세요 📸' : '타원 안에 얼굴을 맞춰주세요'}</Text>
+        <Text style={styles.bottomHint}>
+          {capturing
+            ? '촬영 중…'
+            : countdown !== null
+              ? `${countdown}초 뒤 자동 촬영 · 가만히 계세요`
+              : ok
+                ? '곧 자동 촬영돼요 · 직접 찍어도 됩니다'
+                : '타원 안에 얼굴을 맞춰주세요'}
+        </Text>
         <Pressable
           style={[styles.shutter, ok && styles.shutterOk, capturing && styles.shutterDim]}
           onPress={capture}
@@ -149,8 +217,17 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: 'rgba(251,191,36,0.9)',
     borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   ovalOk: { borderColor: colors.emerald, borderStyle: 'solid' },
+  countNum: {
+    fontSize: 110,
+    fontWeight: '800',
+    color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowRadius: 12,
+  },
   topBar: { position: 'absolute', top: 50, left: 0, right: 0, alignItems: 'center', gap: 12, paddingHorizontal: 16 },
   closeBtn: {
     position: 'absolute',
