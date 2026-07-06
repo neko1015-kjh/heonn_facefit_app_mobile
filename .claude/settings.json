@@ -1,24 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git commit -q -m '자동 테스트: pytest 스위트 추가 — 앱 부팅·/health·동일인 코사인·얼굴크롭·변형 \\(8건\\) *)",
-      "Bash(git push *)",
-      "Bash(git commit -q -m '운영: CI 테스트·장애 모니터링·주간 백업 워크플로 추가 *)",
-      "Bash(git credential *)",
-      "Bash(python -c ' *)",
-      "Bash(git commit -q -m '3D 복원 고도화\\(A\\): kNN 추측 → MediaPipe 공식 삼각망 + Taubin 스무딩 \\(깔끔한 얼굴 면·노이즈 감소\\) *)",
-      "Bash(rm -f .github/workflows/ci.yml .github/workflows/monitor.yml .github/workflows/backup.yml)",
-      "Bash(git pull *)",
-      "Bash(npx.cmd expo *)",
-      "Bash(node -e \"const p=require\\('./package.json'\\).dependencies; console.log\\('expo-gl:', p['expo-gl']\\); console.log\\('three:', p['three']\\);\")",
-      "Bash(npm.cmd install *)",
-      "Bash(node -e \"const d=require\\('./package.json'\\).devDependencies; console.log\\('@types/three:', d['@types/three']\\);\")",
       "Bash(npx.cmd tsc *)",
-      "Bash(echo \"exit=$?\")",
       "Read(//tmp/**)"
     ]
-  },
-  "enabledPlugins": {
-    "expo@claude-plugins-official": true
   }
 }

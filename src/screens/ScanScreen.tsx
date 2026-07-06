@@ -50,6 +50,7 @@ export default function ScanScreen() {
   const [quality, setQuality] = useState<ScanQuality | null>(null); // 적용된 보정 정보
   const [pose, setPose] = useState<HeadPose | null>(null); // 머리 각도(정면 정도)
   const [message, setMessage] = useState(''); // 안내/오류 문구
+  const lastUriRef = useRef<string | null>(null); // 실패 시 '다시 시도'에 쓸 마지막 사진
   const [showGuasha, setShowGuasha] = useState(false); // 괄사 추천 팝업 열림 여부
   const [galleryWidth, setGalleryWidth] = useState(280); // 이미지 갤러리 한 장 너비
   const [matching, setMatching] = useState(false); // "추천 상품 매칭 중" 로딩 표시 여부
@@ -118,6 +119,7 @@ export default function ScanScreen() {
 
   // 고른/촬영한 사진(uri)을 분석하고 결과를 표시합니다. (카메라·갤러리 공통)
   async function analyzeUri(uri: string) {
+    lastUriRef.current = uri; // 실패 시 다시 시도용
     setImageUri(uri);
     setScores(null);
     setLandmarks(null);
@@ -412,6 +414,14 @@ export default function ScanScreen() {
               <Text style={styles.resultTitle}>분석할 수 없어요</Text>
             </View>
             <Text style={styles.resultSub}>{message}</Text>
+            {/* 방금 그 사진으로 바로 다시 시도 (콜드스타트·일시 오류일 때 유용) */}
+            {lastUriRef.current && (
+              <Pressable style={styles.retryBtn} onPress={() => analyzeUri(lastUriRef.current!)}>
+                <Feather name="refresh-cw" size={16} color={colors.bg} />
+                <Text style={styles.retryBtnText}>다시 시도</Text>
+              </Pressable>
+            )}
+            <Text style={styles.retryHint}>다른 사진으로 하려면 아래 카메라·갤러리를 눌러주세요.</Text>
           </View>
         )}
       </ScrollView>
@@ -705,6 +715,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    alignSelf: 'center',
+    marginTop: 14,
+    backgroundColor: colors.amber500,
+    paddingVertical: 11,
+    paddingHorizontal: 26,
+    borderRadius: radius.md,
+  },
+  retryBtnText: {
+    color: colors.bg,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  retryHint: {
+    color: colors.textFaint,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
   },
   // 측정 품질 배지(정면·각도 보정·조명 보정)
   badgeRow: {
