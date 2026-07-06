@@ -12,14 +12,15 @@ import IntroScreen from './src/screens/IntroScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import ConsentScreen from './src/screens/ConsentScreen';
 import PairingScreen from './src/screens/PairingScreen';
+import CalibrationScreen from './src/screens/CalibrationScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ScanScreen from './src/screens/ScanScreen';
 import CareScreen from './src/screens/CareScreen';
 import ReportScreen from './src/screens/ReportScreen';
 import StoreScreen from './src/screens/StoreScreen';
 
-// 앱 전체 단계: 'intro' → 'login' → 'consent'(약관 동의) → 'pairing'(기기 연결) → 'main'
-type AppState = 'intro' | 'login' | 'consent' | 'pairing' | 'main';
+// 앱 전체 단계: 'intro' → 'login' → 'consent'(약관 동의) → 'pairing'(기기 연결) → 'calibration'(첫 셋팅) → 'main'
+type AppState = 'intro' | 'login' | 'consent' | 'pairing' | 'calibration' | 'main';
 // 페어링 단계: 'searching'(검색) → 'found'(발견) → 'connecting'(동기화 중) → 'connected'(연결됨)
 type PairingState = 'searching' | 'found' | 'connecting' | 'connected';
 
@@ -226,8 +227,22 @@ export default function App() {
       setPairingState('connected');
       // 기기 연결을 기억합니다(다음 실행 때 페어링 건너뛰고 바로 홈).
       api.setPaired(true);
-      setTimeout(() => setAppState('main'), 1200);
+      // 위치 포인트 데이터가 없으면(첫 연결) 셋팅 가이드로, 있으면 바로 홈.
+      setTimeout(async () => {
+        const has = await api.hasCalibration();
+        setAppState(has ? 'main' : 'calibration');
+      }, 1200);
     }, 3200);
+  }
+
+  // 셋팅 가이드 완료: 위치 포인트 데이터를 저장하고 홈으로.
+  async function handleCalibrationDone(points: api.CalibrationPoint[]) {
+    await api.saveCalibration(points);
+    setAppState('main');
+  }
+  // 나중에 설정: 저장 없이 홈으로(다음 연결 때 다시 안내).
+  function handleCalibrationSkip() {
+    setAppState('main');
   }
 
   return (
@@ -242,6 +257,10 @@ export default function App() {
 
         {appState === 'pairing' && (
           <PairingScreen pairingState={pairingState} onConnect={handleConnect} />
+        )}
+
+        {appState === 'calibration' && (
+          <CalibrationScreen onDone={handleCalibrationDone} onSkip={handleCalibrationSkip} />
         )}
 
         {appState === 'main' && (

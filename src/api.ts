@@ -80,6 +80,45 @@ export async function setPaired(value: boolean) {
   }
 }
 
+// ── 위치 포인트 데이터(기기 셋팅 캘리브레이션) ──────────────────
+// 첫 연결 후 얼굴 부위별 포인트를 잡아 저장합니다. 데이터가 있으면 셋팅 가이드를 건너뜁니다.
+const CALIB_KEY = 'facefit_calibration';
+export type CalibrationPoint = { step: string; capturedAt: string };
+
+// 저장된 위치 포인트 데이터를 불러옵니다. (없으면 null)
+export async function loadCalibration(): Promise<CalibrationPoint[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CALIB_KEY);
+    return raw ? (JSON.parse(raw) as CalibrationPoint[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+// 위치 포인트 데이터가 있는지 여부. (셋팅 가이드 노출 판단)
+export async function hasCalibration(): Promise<boolean> {
+  const c = await loadCalibration();
+  return !!(c && c.length > 0);
+}
+
+// 위치 포인트 데이터를 저장합니다.
+export async function saveCalibration(points: CalibrationPoint[]) {
+  try {
+    await AsyncStorage.setItem(CALIB_KEY, JSON.stringify(points));
+  } catch {
+    // 저장 실패는 무시
+  }
+}
+
+// (재설정용) 위치 포인트 데이터를 지웁니다.
+export async function clearCalibration() {
+  try {
+    await AsyncStorage.removeItem(CALIB_KEY);
+  } catch {
+    // 무시
+  }
+}
+
 // 로그인한 사용자 정보
 export type AppUser = { id: number; provider: string; display_name: string; consented?: boolean };
 
