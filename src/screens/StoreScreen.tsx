@@ -163,7 +163,7 @@ export default function StoreScreen({ user, onLogout }: StoreScreenProps) {
       {/* 맞춤 솔루션 안내 */}
       <View style={styles.sectionHeader}>
         <Ionicons name="sparkles" size={18} color={colors.amber500} />
-        <Text style={styles.sectionTitle}>너를 위한 맞춤 솔루션</Text>
+        <Text style={styles.sectionTitle}>나를 위한 맞춤 솔루션</Text>
       </View>
 
       {/* 분석 요약 (있으면 분석 기반, 없으면 안내) */}
