@@ -16,7 +16,9 @@ import {
 import Text from '../components/AppText';
 import Face3DViewer from '../components/Face3DViewer';
 import CameraCapture from '../components/CameraCapture';
-import { saveScan, FaceScore, LandmarkPoint, HeadPose, ScanQuality, submitFeedback, BACKEND_URL } from '../api';
+import MultiViewCapture from '../components/MultiViewCapture';
+import { StorageAccessFramework, writeAsStringAsync, EncodingType, documentDirectory } from 'expo-file-system/legacy';
+import { saveScan, FaceScore, LandmarkPoint, HeadPose, ScanQuality, submitFeedback, BACKEND_URL, buildHeadFromPhotos, HeadBuildResult } from '../api';
 import { FACE_REGIONS } from '../faceRegions';
 import FaceRegionMini from '../components/FaceRegionMini';
 import { colors, radius } from '../theme';
@@ -57,6 +59,9 @@ export default function ScanScreen() {
   const [show3D, setShow3D] = useState(false); // 3D 점구름 뷰어 팝업
   const [feedbackDone, setFeedbackDone] = useState(false); // 만족도 평가 완료 여부
   const [cameraOpen, setCameraOpen] = useState(false); // 앱 내 카메라 화면 열림 여부
+  const [headOpen, setHeadOpen] = useState(false); // 맞춤 헤드 다중뷰 촬영 화면 열림 여부
+  const [headBusy, setHeadBusy] = useState(false); // 맞춤 헤드 도면 생성 중
+  const [headResult, setHeadResult] = useState<HeadBuildResult | null>(null); // 맞춤 헤드 결과(측정값·DXF)
 
   // 스캔 라인 위치 애니메이션 값
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -102,6 +107,38 @@ export default function ScanScreen() {
     const picked = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (picked.canceled) return;
     analyzeUri(picked.assets[0].uri);
+  }
+
+  // 맞춤 헤드: 정면·좌·우 3장을 다 찍으면 서버로 보내 도면(측정값+DXF)을 받습니다.
+  async function handleHeadDone(uris: { front: string; left: string; right: string }) {
+    setHeadOpen(false);
+    setHeadBusy(true);
+    setHeadResult(null);
+    const r = await buildHeadFromPhotos(uris.front, uris.left, uris.right, { head_mm: 75 });
+    setHeadBusy(false);
+    setHeadResult(r);
+  }
+
+  // 받은 DXF(도면)를 파일로 저장합니다. 안드로이드는 폴더를 직접 골라 저장(예: 다운로드).
+  async function saveDxf() {
+    if (!headResult?.dxf_base64) return;
+    const name = 'heonn_head.dxf';
+    try {
+      if (Platform.OS === 'android') {
+        const perm = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (!perm.granted) return;
+        const fileUri = await StorageAccessFramework.createFileAsync(perm.directoryUri, 'heonn_head', 'application/dxf');
+        await writeAsStringAsync(fileUri, headResult.dxf_base64, { encoding: EncodingType.Base64 });
+        setMessage('도면(DXF)을 선택한 폴더에 저장했어요.');
+      } else {
+        const fileUri = (documentDirectory ?? '') + name;
+        await writeAsStringAsync(fileUri, headResult.dxf_base64, { encoding: EncodingType.Base64 });
+        setMessage(`도면(DXF)을 저장했어요: ${fileUri}`);
+      }
+      setHeadResult(null);
+    } catch {
+      setMessage('도면 저장에 실패했어요. 다시 시도해주세요.');
+    }
   }
 
   // 갤러리에서 사진 선택
@@ -460,6 +497,14 @@ export default function ScanScreen() {
             </Pressable>
           </View>
         )}
+
+        {/* 맞춤 헤드 도면(3장 촬영) — 휴대폰에서만 (인앱 카메라 필요) */}
+        {Platform.OS !== 'web' && !isAnalyzing && (
+          <Pressable style={styles.headEntry} onPress={() => setHeadOpen(true)}>
+            <Feather name="box" size={16} color={colors.amber400} />
+            <Text style={styles.headEntryText}>맞춤 헤드 도면 만들기 (정면·좌·우 3장)</Text>
+          </Pressable>
+        )}
       </View>
 
       {/* 앱 내 카메라 화면 (얼굴 가이드 + 실시간 안내) */}
@@ -471,6 +516,71 @@ export default function ScanScreen() {
             analyzeUri(uri);
           }}
         />
+      </Modal>
+
+      {/* 맞춤 헤드: 다중뷰(정면·좌·우) 가이드 촬영 */}
+      <Modal visible={headOpen} animationType="slide" onRequestClose={() => setHeadOpen(false)}>
+        <MultiViewCapture onClose={() => setHeadOpen(false)} onDone={handleHeadDone} />
+      </Modal>
+
+      {/* 맞춤 헤드: 도면 생성 중 */}
+      <Modal visible={headBusy} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.matchCard}>
+            <Feather name="box" size={28} color={colors.amber400} />
+            <Text style={styles.matchText}>턱선을 분석해 맞춤 헤드 도면을 만들고 있어요...</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 맞춤 헤드: 결과(측정값 + DXF 저장) */}
+      <Modal visible={!!headResult} transparent animationType="fade" onRequestClose={() => setHeadResult(null)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setHeadResult(null)}>
+          <Pressable style={styles.headCard} onPress={() => {}}>
+            <View style={styles.view3dHeader}>
+              <View style={styles.view3dTitleRow}>
+                <Feather name="box" size={18} color={colors.amber400} />
+                <Text style={styles.view3dTitle}>맞춤 헤드 도면</Text>
+              </View>
+              <Pressable onPress={() => setHeadResult(null)} hitSlop={10}>
+                <Feather name="x" size={22} color={colors.textMuted} />
+              </Pressable>
+            </View>
+            {headResult?.ok ? (
+              <>
+                {headResult.views_used?.length ? (
+                  <Text style={styles.headSub}>사용한 사진: {headResult.views_used.join(' · ')}</Text>
+                ) : null}
+                <View style={styles.headTable}>
+                  {[
+                    ['턱선 곡선 길이', headResult.measurements?.arc_len, 'mm'],
+                    ['곡률 반지름', headResult.measurements?.radius, 'mm'],
+                    ['가장 굽은 곳 반지름', headResult.measurements?.min_radius, 'mm'],
+                    ['헤드 폭', headResult.measurements?.head_width, 'mm'],
+                    ['헤드 두께', headResult.measurements?.thickness, 'mm'],
+                    ['본체 결합 돌기폭', headResult.measurements?.mount_w, 'mm'],
+                  ].map(([label, v]) =>
+                    typeof v === 'number' ? (
+                      <View key={label as string} style={styles.headRow}>
+                        <Text style={styles.headRowLabel}>{label}</Text>
+                        <Text style={styles.headRowVal}>{Math.round((v as number) * 10) / 10} {'mm'}</Text>
+                      </View>
+                    ) : null
+                  )}
+                </View>
+                <Text style={styles.headNote}>이 곡선을 얼굴(턱선)에 대고 괄사 마사지를 하도록 설계했어요. 도면(DXF)을 저장해 제작에 사용하세요.</Text>
+                <Pressable style={styles.scanButton} onPress={saveDxf}>
+                  <View style={styles.scanButtonInner}>
+                    <Feather name="download" size={18} color={colors.bg} />
+                    <Text style={styles.scanButtonText}>도면(DXF) 저장</Text>
+                  </View>
+                </Pressable>
+              </>
+            ) : (
+              <Text style={styles.headNote}>{headResult?.message || '도면을 만들지 못했어요. 얼굴이 잘 보이게 다시 촬영해주세요.'}</Text>
+            )}
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* 3D 안면 점구름 뷰어 */}
@@ -1007,6 +1117,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
   },
+  headEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    backgroundColor: colors.surface,
+  },
+  headEntryText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  headCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border2,
+    padding: 20,
+    gap: 12,
+  },
+  headSub: { color: colors.textFaint, fontSize: 12 },
+  headTable: { gap: 8 },
+  headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headRowLabel: { color: colors.textMuted, fontSize: 13 },
+  headRowVal: { color: colors.amber400, fontSize: 14, fontWeight: '700' },
+  headNote: { color: colors.textMuted, fontSize: 12, lineHeight: 18 },
   matchTrack: {
     width: '100%',
     height: 8,

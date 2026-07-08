@@ -401,7 +401,8 @@ export async function saveScan(
 
 // 실시간 촬영 가이드: 미리보기 프레임을 보내 '얼굴 인식·위치·정면' 안내를 받습니다.
 // (카메라 화면에서 1~2초마다 호출 — 실패해도 조용히 넘어가 가이드만 멈춥니다)
-export type GuideResult = { detected: boolean; ok: boolean; hint: string };
+// yaw: 좌우 고개 각도(도). 다중뷰(정면·좌·우) 가이드 촬영에 사용.
+export type GuideResult = { detected: boolean; ok: boolean; hint: string; yaw?: number | null; pitch?: number | null };
 export async function sendGuideFrame(uri: string): Promise<GuideResult> {
   try {
     const { json } = await uploadImageFile('/scan/guide', uri);
@@ -410,6 +411,37 @@ export async function sendGuideFrame(uri: string): Promise<GuideResult> {
     // 네트워크 일시 실패는 무시(다음 프레임에서 다시 시도)
   }
   return { detected: false, ok: false, hint: '' };
+}
+
+// 맞춤 헤드 도면 측정값 + DXF(base64)
+export type HeadBuildResult = {
+  ok: boolean;
+  message?: string;
+  views_used?: string[];
+  measurements?: Record<string, number>;
+  dxf_base64?: string;
+};
+
+// 정면(+좌/우) 사진으로 맞춤 헤드 CAD를 만듭니다. (다중뷰 → 서버가 턱선 곡선·헤드 도면 생성)
+export async function buildHeadFromPhotos(
+  front: string, left?: string | null, right?: string | null,
+  opts?: { head_mm?: number; ipd_mm?: number }
+): Promise<HeadBuildResult> {
+  const fd = new FormData();
+  const add = (name: string, uri?: string | null) => {
+    if (uri) fd.append(name, { uri, name: `${name}.jpg`, type: 'image/jpeg' } as any);
+  };
+  add('front', front); add('left', left); add('right', right);
+  fd.append('head_mm', String(opts?.head_mm ?? 75));
+  fd.append('ipd_mm', String(opts?.ipd_mm ?? 63));
+  try {
+    const res = await fetch(`${BACKEND_URL}/head/build.json`, {
+      method: 'POST', headers: authHeaders(), body: fd,
+    });
+    return (await res.json()) as HeadBuildResult;
+  } catch (e: any) {
+    return { ok: false, message: `업로드 실패: ${e?.message ?? e}` };
+  }
 }
 
 // 저장된 모든 이력을 최신순으로 가져오는 함수입니다.
