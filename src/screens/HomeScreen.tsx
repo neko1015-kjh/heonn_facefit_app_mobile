@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Text from '../components/AppText';
 import { getHistory, ScanRecord } from '../api';
+import { getLatestStatus, isBleConnected, onConnectionChange, onDeviceStatus } from '../ble';
 import { colors, radius } from '../theme';
 import type { TabKey } from '../components/BottomNav';
 
@@ -125,11 +126,21 @@ export default function HomeScreen({ goTab }: Props) {
   const [records, setRecords] = useState<ScanRecord[]>([]);
   const [notifOpen, setNotifOpen] = useState(false); // 알림센터 팝업 열림 여부
   const [hasUnread, setHasUnread] = useState(true); // 안 읽은 알림 표시(빨간 점)
+  // 실제 기기(BLE) 연결 여부·상태(배터리·온도). 연결 안 됐으면 데모 값 표시.
+  const [bleOn, setBleOn] = useState(isBleConnected());
+  const [devStatus, setDevStatus] = useState(getLatestStatus());
 
   useEffect(() => {
     getHistory()
       .then((d) => setRecords(d.records))
       .catch((e) => console.log('이력 불러오기 실패:', e));
+    // BLE 연결/상태 변화를 구독해 상태 바를 실시간 갱신합니다.
+    const offConn = onConnectionChange(setBleOn);
+    const offStatus = onDeviceStatus(setDevStatus);
+    return () => {
+      offConn();
+      offStatus();
+    };
   }, []);
 
   const newest = records[0];
@@ -161,20 +172,24 @@ export default function HomeScreen({ goTab }: Props) {
         </View>
       </View>
 
-      {/* 기기 연결 상태 바 */}
+      {/* 기기 연결 상태 바 — 실제 BLE 연결 시 실측값, 아니면 데모 값 */}
       <View style={styles.statusBar}>
         <View style={styles.statusLeft}>
           <Feather name="bluetooth" size={16} color={colors.emerald} />
-          <Text style={styles.connectedText}>연결됨</Text>
+          <Text style={styles.connectedText}>{bleOn ? '연결됨' : '연결됨 (데모)'}</Text>
         </View>
         <View style={styles.statusRight}>
           <View style={styles.statusItem}>
             <Feather name="battery" size={16} color={colors.textMuted} />
-            <Text style={styles.statusItemText}>85%</Text>
+            <Text style={styles.statusItemText}>
+              {bleOn && devStatus.battery != null ? `${devStatus.battery}%` : '85%'}
+            </Text>
           </View>
           <View style={styles.statusItem}>
             <Feather name="thermometer" size={16} color={colors.textMuted} />
-            <Text style={styles.statusItemText}>32°C</Text>
+            <Text style={styles.statusItemText}>
+              {bleOn && devStatus.temp != null ? `${devStatus.temp}°C` : '32°C'}
+            </Text>
           </View>
         </View>
       </View>

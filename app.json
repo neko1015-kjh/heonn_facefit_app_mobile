@@ -41,6 +41,13 @@
         {
           "cameraPermission": "얼굴 분석 사진을 촬영하기 위해 카메라를 사용합니다."
         }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "bluetoothAlwaysPermission": "헤온 페이스핏 기기와 연결하기 위해 블루투스를 사용합니다."
+        }
       ]
     ]
   }

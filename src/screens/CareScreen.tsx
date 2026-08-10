@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import Text from '../components/AppText';
 import { cancelNotification, ensureNotificationPermission, scheduleCareNotification } from '../notify';
+import { isBleConnected, sendMode, sendTemp } from '../ble';
 import { colors, radius } from '../theme';
 
 // 부위별 마사지 가이드 단계입니다.
@@ -182,8 +183,15 @@ export default function CareScreen() {
   }
 
   // 온도/모드 선택 시: 기기 동기화 로딩 표시 + (대기 중이면) 카운트다운 시작
-  function applySetting() {
+  // modeIdx: 방금 고른 진동 모드 번호(0=릴렉스 1=탄력UP 2=집중). 온도만 바꿨으면 생략.
+  function applySetting(modeIdx?: number) {
     setSyncing(true);
+    // 실제 기기(BLE)가 연결돼 있으면 설정값을 기기로 전송합니다. (실패해도 화면 흐름은 유지)
+    if (isBleConnected()) {
+      sendTemp(temp).catch(() => {});
+      const m = modeIdx !== undefined ? modeIdx : activeMode;
+      if (m >= 0) sendMode(m + 1).catch(() => {}); // 기기 규격: 0=끔이라 +1
+    }
     setTimeout(() => setSyncing(false), 1500);
     startCountdown();
   }
@@ -300,7 +308,7 @@ export default function CareScreen() {
           onMoveShouldSetResponder={() => true}
           onResponderGrant={(e) => updateTempFromTouch(e.nativeEvent.locationX)}
           onResponderMove={(e) => updateTempFromTouch(e.nativeEvent.locationX)}
-          onResponderRelease={applySetting}
+          onResponderRelease={() => applySetting()}
         >
           <View style={[styles.tempFill, { width: `${tempPercent}%`, backgroundColor: tempColor(temp) }]} />
           <View style={[styles.tempThumb, { left: `${tempPercent}%` }]} />
@@ -321,7 +329,7 @@ export default function CareScreen() {
                 style={[styles.modeBtn, active && styles.modeBtnActive]}
                 onPress={() => {
                   setActiveMode(idx);
-                  applySetting();
+                  applySetting(idx); // 방금 고른 모드를 기기로 전송
                 }}
               >
                 <Text style={[styles.modeText, active && styles.modeTextActive]}>{mode.name}</Text>

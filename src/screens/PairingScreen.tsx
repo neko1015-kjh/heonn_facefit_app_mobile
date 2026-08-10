@@ -11,12 +11,16 @@ type PairingState = 'searching' | 'found' | 'connecting' | 'connected';
 type Props = {
   pairingState: PairingState;
   onConnect: () => void;
+  // 실제 BLE로 찾은 기기 이름 (없으면 데모 모드)
+  deviceName?: string;
+  // 데모 모드 여부 — 실제 기기를 못 찾았거나 BLE를 못 쓰는 환경(웹 등)
+  demo?: boolean;
 };
 
 // 기기와 동기화하는 단계들 (순서대로 진행 표시)
 const SYNC_STEPS = ['기기 인증', '맞춤 설정 동기화', '온도·모드 불러오기', '연결 마무리'];
 
-export default function PairingScreen({ pairingState, onConnect }: Props) {
+export default function PairingScreen({ pairingState, onConnect, deviceName, demo }: Props) {
   // 검색 중일 때 바깥으로 퍼지는 물결 애니메이션 값입니다.
   const ripple = useRef(new Animated.Value(0)).current;
   // 동기화 진행 단계(0부터 SYNC_STEPS 끝까지 순서대로 올라감)
@@ -103,8 +107,8 @@ export default function PairingScreen({ pairingState, onConnect }: Props) {
                 <Feather name="bluetooth" size={24} color={colors.amber400} />
               </View>
               <View>
-                <Text style={styles.foundName}>HeOnn FaceFit (v1.0)</Text>
-                <Text style={styles.foundSub}>BLE 연결 가능</Text>
+                <Text style={styles.foundName}>{deviceName || 'HeOnn FaceFit (v1.0)'}</Text>
+                <Text style={styles.foundSub}>{demo ? '데모 모드 (기기 없이 체험)' : 'BLE 연결 가능'}</Text>
               </View>
             </View>
             <View style={styles.connectBtn}>

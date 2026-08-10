@@ -6,6 +6,7 @@ import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { addCareNotificationResponseListener } from './src/notify';
 import * as api from './src/api';
+import * as ble from './src/ble';
 import BottomNav, { TabKey } from './src/components/BottomNav';
 import { colors } from './src/theme';
 import IntroScreen from './src/screens/IntroScreen';
@@ -31,8 +32,31 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('intro');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [pairingState, setPairingState] = useState<PairingState>('searching');
+  // 실제 BLE 검색으로 찾은 헤온 기기(없으면 null → 데모 모드로 진행)
+  const [foundDevice, setFoundDevice] = useState<ble.BleDeviceInfo | null>(null);
   // 로그인한 사용자 정보(없으면 null)
   const [user, setUser] = useState<api.AppUser | null>(null);
+
+  // 페어링 시작: 실제 BLE로 헤온 기기를 검색하고, 못 찾으면 데모 모드로 넘어갑니다.
+  // (웹·Expo Go 등 BLE를 못 쓰는 환경에서는 바로 데모 모드)
+  async function startPairing() {
+    setAppState('pairing');
+    setPairingState('searching');
+    setFoundDevice(null);
+    // 검색 애니메이션을 최소 2초는 보여줍니다(너무 빨리 넘어가지 않게).
+    const minWait = new Promise((r) => setTimeout(r, 2000));
+    let device: ble.BleDeviceInfo | null = null;
+    try {
+      if (ble.bleSupported()) {
+        device = await ble.scanForHeonnDevice(8000); // 최대 8초 검색
+      }
+    } catch {
+      device = null; // 검색 실패는 데모 모드로
+    }
+    await minWait;
+    setFoundDevice(device);
+    setPairingState('found');
+  }
 
   // 시스템 알림을 눌렀을 때, 해당 화면(케어 탭)으로 이동합니다.
   useEffect(() => {
@@ -86,10 +110,8 @@ export default function App() {
           setActiveTab('home');
           setAppState('main');
         } else {
-          // 로그인·동의됐지만 기기 연결 전 → 페어링
-          setAppState('pairing');
-          setPairingState('searching');
-          setTimeout(() => setPairingState('found'), 2000);
+          // 로그인·동의됐지만 기기 연결 전 → 페어링(실제 BLE 검색 + 데모 폴백)
+          startPairing();
         }
       } else {
         setAppState('login');
@@ -123,9 +145,7 @@ export default function App() {
       setAppState('consent');
       return;
     }
-    setAppState('pairing');
-    setPairingState('searching');
-    setTimeout(() => setPairingState('found'), 2000);
+    startPairing();
   }
 
   async function handleLogin(provider: string, remember: boolean) {
@@ -204,9 +224,7 @@ export default function App() {
       setActiveTab('home');
       setAppState('main');
     } else {
-      setAppState('pairing');
-      setPairingState('searching');
-      setTimeout(() => setPairingState('found'), 2000);
+      startPairing();
     }
   }
 
@@ -218,21 +236,42 @@ export default function App() {
     setAppState('login');
   }
 
+  // 연결 완료 후 공통 처리: 연결 기억 + (첫 연결이면) 셋팅 가이드로
+  function finishConnect() {
+    setPairingState('connected');
+    // 기기 연결을 기억합니다(다음 실행 때 페어링 건너뛰고 바로 홈).
+    api.setPaired(true);
+    // 위치 포인트 데이터가 없으면(첫 연결) 셋팅 가이드로, 있으면 바로 홈.
+    setTimeout(async () => {
+      const has = await api.hasCalibration();
+      setAppState(has ? 'main' : 'calibration');
+    }, 1200);
+  }
+
   // 기기 "연결" 버튼을 눌렀을 때:
-  // 동기화(싱크) 로딩 → 완료 표시 → 메인 앱으로 이동
-  function handleConnect() {
+  // - 실제 기기를 찾았으면: BLE로 진짜 연결 시도 (실패하면 데모 모드로 이어감)
+  // - 못 찾았으면(데모 모드): 동기화 애니메이션(약 3.2초) 후 완료
+  async function handleConnect() {
     setPairingState('connecting');
-    // 동기화 단계 진행 시간(약 3.2초) 후 완료
-    setTimeout(() => {
-      setPairingState('connected');
-      // 기기 연결을 기억합니다(다음 실행 때 페어링 건너뛰고 바로 홈).
-      api.setPaired(true);
-      // 위치 포인트 데이터가 없으면(첫 연결) 셋팅 가이드로, 있으면 바로 홈.
-      setTimeout(async () => {
-        const has = await api.hasCalibration();
-        setAppState(has ? 'main' : 'calibration');
-      }, 1200);
-    }, 3200);
+    if (foundDevice) {
+      const minSync = new Promise((r) => setTimeout(r, 2000)); // 동기화 화면 최소 표시
+      let ok = false;
+      try {
+        ok = await ble.connectToHeonnDevice(foundDevice.id);
+      } catch {
+        ok = false;
+      }
+      await minSync;
+      if (!ok) {
+        // 실제 연결 실패 → 흐름이 끊기지 않게 데모 모드로 이어갑니다.
+        console.log('BLE 연결 실패 — 데모 모드로 진행');
+        setFoundDevice(null);
+      }
+      finishConnect();
+      return;
+    }
+    // 데모 모드: 기존 동기화 애니메이션
+    setTimeout(finishConnect, 3200);
   }
 
   // 셋팅 가이드 완료: 위치 포인트 데이터를 저장하고 홈으로.
@@ -256,7 +295,12 @@ export default function App() {
         {appState === 'consent' && <ConsentScreen onAgree={handleConsentDone} />}
 
         {appState === 'pairing' && (
-          <PairingScreen pairingState={pairingState} onConnect={handleConnect} />
+          <PairingScreen
+            pairingState={pairingState}
+            onConnect={handleConnect}
+            deviceName={foundDevice?.name}
+            demo={!foundDevice}
+          />
         )}
 
         {appState === 'calibration' && (
