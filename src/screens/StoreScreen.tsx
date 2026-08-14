@@ -6,6 +6,23 @@ import Text from '../components/AppText';
 import { getRecommendations, RecommendationResult, AppUser, getAiMetrics, AiMetrics } from '../api';
 import { colors, radius } from '../theme';
 
+// 추천 제품 대표 이미지 — 외부 이미지(unsplash)가 회사망 등에서 차단돼 못 불러오면
+// 빈 칸 대신 물방울 아이콘으로 자동 대체합니다.
+function ProductThumb({ uri }: { uri?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!uri || failed) {
+    return <Feather name="droplet" size={32} color="rgba(217,119,6,0.5)" />;
+  }
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.productImage}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 // 세척 주기 설정: 10회 사용마다 세척 권장 (예시 데이터)
 const CLEAN_THRESHOLD = 10;
 const CLEAN_USE_COUNT = 10; // 현재까지 세척 후 사용 횟수(예시)
@@ -192,12 +209,8 @@ export default function StoreScreen({ user, onLogout }: StoreScreenProps) {
         {(rec?.products ?? []).map((p, idx) => (
           <View key={`${p.name}-${idx}`} style={styles.productCard}>
             <View style={styles.productThumb}>
-              {p.image ? (
-                // 제품 대표 이미지
-                <Image source={{ uri: p.image }} style={styles.productImage} resizeMode="cover" />
-              ) : (
-                <Feather name="droplet" size={32} color="rgba(217,119,6,0.5)" />
-              )}
+              {/* 제품 대표 이미지 (차단·실패 시 아이콘 자동 대체) */}
+              <ProductThumb uri={p.image} />
             </View>
             <Text style={styles.productName}>{p.name}</Text>
             <Text style={styles.productDesc}>{p.desc}</Text>
