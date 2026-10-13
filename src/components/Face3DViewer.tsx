@@ -37,22 +37,23 @@ type Props = {
 const USE_GL_ON_WEB = true;
 
 export default function Face3DViewer({ points }: Props) {
-  // 휴대폰(앱)은 항상 three.js, 웹은 위 플래그에 따라 three.js 또는 아래 SVG판.
-  if (Platform.OS !== 'web' || USE_GL_ON_WEB) {
-    return <Face3DViewerGL points={points} />;
+  // 3D 엔진(three.js)이 이 기기에서 실패하면 앱이 꺼지지 않도록 가벼운 SVG판으로 자동 전환합니다.
+  const [glFailed, setGlFailed] = useState(false);
+  // 휴대폰(앱)은 three.js, 웹은 위 플래그에 따라 three.js 또는 SVG판.
+  if ((Platform.OS !== 'web' || USE_GL_ON_WEB) && !glFailed) {
+    return <Face3DViewerGL points={points} onError={() => setGlFailed(true)} />;
   }
+  return <Face3DViewerSVG points={points} />;
+}
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+// 가벼운 SVG판 3D 뷰어(웹 미리보기 / 3D 엔진 실패 시 대체용)
+function Face3DViewerSVG({ points }: Props) {
   const [yaw, setYaw] = useState(0.3);
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const [pitch, setPitch] = useState(0.04);
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const dragging = useRef(false);
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const start = useRef({ yaw: 0.3, pitch: 0.04 });
 
   // 롤 보정 + 스무딩된 점 (공용 함수)
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const pts = useMemo(() => prepareFacePoints(points), [points]);
 
   // 점들의 중심·스케일을 한 번만 계산
