@@ -413,12 +413,26 @@ export async function sendGuideFrame(uri: string): Promise<GuideResult> {
   return { detected: false, ok: false, hint: '' };
 }
 
-// 맞춤 헤드 도면 측정값 + DXF(base64)
+// 맞춤 유기판의 오목면 하나(위쪽 홈·왼쪽 긴 면) 결과
+export type HeadNotch = {
+  id: string;            // 'chin' 위쪽 홈 / 'cheek' 왼쪽 긴 면
+  label: string;
+  chord: number;         // 홈 폭(mm)
+  face_radius: number | null; // 측정한 얼굴 곡률(원본 유지면 null)
+  orig_radius: number; radius: number;   // 홈 반지름 원본 → 맞춤
+  orig_depth: number; depth: number;     // 홈 깊이 원본 → 맞춤
+  min_band: number;      // 남은 최소 띠 폭
+  limited: boolean;      // 안전 한도 때문에 깊이를 줄였는지
+  fixed?: boolean;       // 원본 그대로 둔 구간인지
+};
+
+// 맞춤 유기판 도면 측정값 + DXF(base64)
 export type HeadBuildResult = {
   ok: boolean;
   message?: string;
   views_used?: string[];
-  measurements?: Record<string, number>;
+  measurements?: Record<string, number | null>;
+  notches?: HeadNotch[];
   dxf_base64?: string;
 };
 

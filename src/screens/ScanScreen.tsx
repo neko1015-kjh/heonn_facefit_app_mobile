@@ -122,12 +122,12 @@ export default function ScanScreen() {
   // 받은 DXF(도면)를 파일로 저장합니다. 안드로이드는 폴더를 직접 골라 저장(예: 다운로드).
   async function saveDxf() {
     if (!headResult?.dxf_base64) return;
-    const name = 'heonn_head.dxf';
+    const name = 'heonn_plate.dxf';
     try {
       if (Platform.OS === 'android') {
         const perm = await StorageAccessFramework.requestDirectoryPermissionsAsync();
         if (!perm.granted) return;
-        const fileUri = await StorageAccessFramework.createFileAsync(perm.directoryUri, 'heonn_head', 'application/dxf');
+        const fileUri = await StorageAccessFramework.createFileAsync(perm.directoryUri, 'heonn_plate', 'application/dxf');
         await writeAsStringAsync(fileUri, headResult.dxf_base64, { encoding: EncodingType.Base64 });
         setMessage('도면(DXF)을 선택한 폴더에 저장했어요.');
       } else {
@@ -502,7 +502,7 @@ export default function ScanScreen() {
         {Platform.OS !== 'web' && !isAnalyzing && (
           <Pressable style={styles.headEntry} onPress={() => setHeadOpen(true)}>
             <Feather name="box" size={16} color={colors.amber400} />
-            <Text style={styles.headEntryText}>맞춤 헤드 도면 만들기 (정면·좌·우 3장)</Text>
+            <Text style={styles.headEntryText}>맞춤 유기판 도면 만들기 (정면·좌·우 3장)</Text>
           </Pressable>
         )}
       </View>
@@ -528,7 +528,7 @@ export default function ScanScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.matchCard}>
             <Feather name="box" size={28} color={colors.amber400} />
-            <Text style={styles.matchText}>턱선을 분석해 맞춤 헤드 도면을 만들고 있어요...</Text>
+            <Text style={styles.matchText}>턱선을 분석해 맞춤 유기판 도면을 만들고 있어요...</Text>
           </View>
         </View>
       </Modal>
@@ -540,7 +540,7 @@ export default function ScanScreen() {
             <View style={styles.view3dHeader}>
               <View style={styles.view3dTitleRow}>
                 <Feather name="box" size={18} color={colors.amber400} />
-                <Text style={styles.view3dTitle}>맞춤 헤드 도면</Text>
+                <Text style={styles.view3dTitle}>맞춤 유기판 도면</Text>
               </View>
               <Pressable onPress={() => setHeadResult(null)} hitSlop={10}>
                 <Feather name="x" size={22} color={colors.textMuted} />
@@ -552,23 +552,27 @@ export default function ScanScreen() {
                   <Text style={styles.headSub}>사용한 사진: {headResult.views_used.join(' · ')}</Text>
                 ) : null}
                 <View style={styles.headTable}>
-                  {[
-                    ['턱선 곡선 길이', headResult.measurements?.arc_len, 'mm'],
-                    ['곡률 반지름', headResult.measurements?.radius, 'mm'],
-                    ['가장 굽은 곳 반지름', headResult.measurements?.min_radius, 'mm'],
-                    ['헤드 폭', headResult.measurements?.head_width, 'mm'],
-                    ['헤드 두께', headResult.measurements?.thickness, 'mm'],
-                    ['본체 결합 돌기폭', headResult.measurements?.mount_w, 'mm'],
-                  ].map(([label, v]) =>
-                    typeof v === 'number' ? (
-                      <View key={label as string} style={styles.headRow}>
-                        <Text style={styles.headRowLabel}>{label}</Text>
-                        <Text style={styles.headRowVal}>{Math.round((v as number) * 10) / 10} {'mm'}</Text>
-                      </View>
-                    ) : null
-                  )}
+                  {/* 오목면별 결과: 위쪽 홈(턱끝)·왼쪽 긴 면(턱선) — 원본 → 맞춤 */}
+                  {(headResult.notches ?? []).map((n) => (
+                    <View key={n.id} style={styles.headRow}>
+                      <Text style={styles.headRowLabel}>{n.id === 'chin' ? '위쪽 홈 (턱끝)' : '왼쪽 긴 면 (턱선)'}</Text>
+                      <Text style={styles.headRowVal}>
+                        {n.fixed ? `원본 유지 · R ${n.radius}mm` : `R ${n.orig_radius} → ${n.radius}mm${n.limited ? ' (안전 한도)' : ''}`}
+                      </Text>
+                    </View>
+                  ))}
+                  {typeof headResult.measurements?.head_width === 'number' ? (
+                    <View style={styles.headRow}>
+                      <Text style={styles.headRowLabel}>남은 최소 띠 폭</Text>
+                      <Text style={styles.headRowVal}>{Math.round(headResult.measurements.head_width * 10) / 10} mm</Text>
+                    </View>
+                  ) : null}
+                  <View style={styles.headRow}>
+                    <Text style={styles.headRowLabel}>바디 조립부 (안쪽 선·나사 구멍)</Text>
+                    <Text style={styles.headRowVal}>원본 그대로</Text>
+                  </View>
                 </View>
-                <Text style={styles.headNote}>이 곡선을 얼굴(턱선)에 대고 괄사 마사지를 하도록 설계했어요. 도면(DXF)을 저장해 제작에 사용하세요.</Text>
+                <Text style={styles.headNote}>헤온 바디에 그대로 조립되는 방짜유기 판 도면이에요. 얼굴에 닿는 오목면만 이 얼굴에 맞췄어요(위쪽 홈은 사진으로는 잴 수 없어 원본 유지). 도면(DXF)을 저장해 디자이너에게 전달하세요.</Text>
                 <Pressable style={styles.scanButton} onPress={saveDxf}>
                   <View style={styles.scanButtonInner}>
                     <Feather name="download" size={18} color={colors.bg} />
