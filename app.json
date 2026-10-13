@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.heonn.facefit",
-      "versionCode": 19,
+      "versionCode": 20,
       "adaptiveIcon": {
         "backgroundColor": "#D8AE58",
         "foregroundImage": "./assets/android-icon-foreground.png"
